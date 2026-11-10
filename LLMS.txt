@@ -1,0 +1,36 @@
+# LLMS.txt — Context for AI Models & Autonomous Agents
+# Project: Hydro Interactive Presentation Deck (Hydro Industries)
+# Organization: Inhaus-Developer-Team
+# Target Models: Claude 3.5 Sonnet, GPT-4o, Gemini 1.5 Pro, DeepSeek R1
+
+> This file provides structured machine-readable context, design rules, tech stack constraints, and content guardrails for AI agents reading or modifying this repository.
+
+## 1. Project Synopsis
+The Hydro Interactive Deck is a high-performance web presentation built for Hydro Industries (a UK-based global water treatment and cleantech corporation). The page uses a scroll-choreographed, multi-layered depth engine inspired by the Marlin continuous marine layout, combining synchronized aerial/submarine video playback, Three.js WebGL caustics, and an interactive 13-slide story.
+
+## 2. Technology Stack & Boundaries
+- **Runtime:** Native browser ECMAScript 2022 + Three.js r128 (via CDN). No bundlers or Node runtime required for execution.
+- **Styling:** Vanilla CSS3 using custom properties (`--accent-cyan`, `--bg-dark`, `--font-sans`, `--font-mono`).
+- **3D Graphics:** WebGL renderer with ACESFilmic tone mapping, custom GLSL shaders (caustics, wave vertex displacement, Fresnel atmosphere), procedural particle systems, and PBR textures.
+- **Video Scrubbing Engine:** HTML5 dual `<video>` elements (`#flight-video-above` and `#flight-video-under`) coordinated at `VIDEO_SEAM = 0.50`.
+
+## 3. Mandatory Guardrails & Compliance Rules
+1. **Excluded Territories:** DO NOT include or reintroduce references, flags, pins, or copy for **Namibia, Slovakia, or Morocco**. All active hubs are strictly:
+   - UK (Llangennech / London HQ)
+   - Ecuador (Quito)
+   - Colombia (Bogotá)
+   - Saudi Arabia (Riyadh)
+   - Egypt (Cairo)
+   - Bahrain (Manama JV Office)
+2. **Branding Integrity:** Always use official Hydro logos (`assets/brand/hydro_logo_white.png` and `assets/brand/hydro_logo_color.png`). Do NOT invent generic text logos or third-party placeholder marks.
+3. **Pure Water Theme:** Background videos and 3D scenes MUST focus purely on water flow, aerial coasts, and submarine depths. No jet skis or sports vehicles.
+4. **Accessibility:** Ensure high contrast (`>= 4.5:1`), semantic ARIA labels, responsive clamp typography, and full keyboard navigation.
+
+## 4. Key Source Files
+- `index.html`: Semantic HTML structure for all 13 slides, navigation bar, progress indicators, slide-out drawer, and thumbnail grid.
+- `deck.js`: Scroll listening, video scrubbing interpolation, keyboard handler, drawer state, and clarification simulator math.
+- `scene3d.js`: Three.js scene setup, 3D photorealistic Earth globe with exact geographic lat/lon mapping, modular reactor model, and particle physics.
+- `styles.css`: Complete styling, dark aquatic theme, responsive breakpoints, drawer transitions, and button animations.
+- `docs/specs/PRD.md`: Full Product Requirements Document with Mermaid diagrams.
+- `docs/architecture/TECHNICAL_SPEC.md`: Software and WebGL architectural specifications.
+- `docs/guides/OPERATOR_MANUAL.md`: Presenter keyboard and user guide.

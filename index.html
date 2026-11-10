@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hydro Industries — Interactive 3D Deck</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,400;1,600&display=swap" rel="stylesheet">
+  
+  <!-- ThreeJS CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Dual-Clip Cinematic Flight Video Backdrop (Marlin Choreography Architecture) -->
+  <div id="flight-video-container" class="flight-video-container" aria-hidden="true">
+    <video id="flight-video-above" class="flight-video flight-video-above" muted playsinline preload="auto" src="assets/videos/hydro_flight_above.mp4"></video>
+    <video id="flight-video-under" class="flight-video flight-video-under" muted playsinline preload="auto" src="assets/videos/hydro_flight_under.mp4"></video>
+    <div class="flight-video-gradient"></div>
+  </div>
+
+  <!-- Ambient Video Fluid Layer (Water Caustics) -->
+  <video id="ambient-video-backdrop" autoplay loop muted playsinline src="assets/videos/hydro_ambient_water.mp4"></video>
+
+  <!-- WebGL 3D Canvas -->
+  <canvas id="webgl-canvas"></canvas>
+
+  <!-- Autoplay Progress Indicator -->
+  <div id="autoplay-progress"></div>
+
+  <!-- Interactive Presentation Viewport -->
+  <div id="deck-viewport">
+
+    <!-- Header Navigation -->
+    <header class="deck-header">
+      <div class="brand-wrapper">
+        <a href="#slide=0" class="brand-link" title="Hydro Industries">
+          <img src="assets/brand/hydro_logo_white.png" alt="Hydro Industries" class="brand-logo-img">
+        </a>
+        <div class="brand-section-tag">Company Overview</div>
+      </div>
+
+      <div class="header-meta">
+        <button class="btn-header-action" id="btn-audio-toggle" title="Toggle Hydro Ambient Sound">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
+            <line x1="23" y1="9" x2="17" y2="15"></line>
+            <line x1="17" y1="9" x2="23" y2="15"></line>
+          </svg>
+          Sound: Off
+        </button>
+
+        <div class="keyboard-hint">
+          <span>Navigate:</span>
+          <span class="key-badge">←</span>
+          <span class="key-badge">→</span>
+          <span>Detail:</span>
+          <span class="key-badge">D</span>
+          <span>Grid:</span>
+          <span class="key-badge">G</span>
+          <span>Full:</span>
+          <span class="key-badge">F</span>
+        </div>
+
+        <button class="btn-header-action" id="btn-grid-view" title="Toggle Slide Grid (G)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          Grid
+        </button>
+
+        <button class="btn-header-action" id="btn-autoplay" title="Toggle Auto-Play Walkthrough (A)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          Auto: Off
+        </button>
+
+        <button class="btn-header-action" id="btn-help" title="Keyboard Shortcuts (?)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          Help
+        </button>
+
+        <div class="slide-counter">
+          <span class="current-num">01</span> / <span class="total-num">13</span>
+        </div>
+
+        <button class="btn-header-action" id="btn-fullscreen" title="Toggle Fullscreen">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+          </svg>
+          Full Screen
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Slides Container -->
+    <main class="slides-container">
+
+      <!-- SLIDE 01: Cover (3-Layer Depth Sandwich: Monumental BG -> Middle Cutout -> Foreground UI) -->
+      <section class="slide active" data-index="0">
+        <div class="monumental-bg-text">HYDRO</div>
+<!-- 1. Background Layer: Monumental Perspective Water Typography -->
+        
+
+        <!-- 2. Middleground Layer: Crystalline Water Monument Structure -->
+        <div class="middleground-card" style="position: absolute; right: 10%; top: 20%; width: 440px; height: 580px; pointer-events: none;">
+          <img src="assets/images/water_monument_cutout.png" alt="Hydro Water Reactor Monument" style="width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 20px 40px rgba(0, 210, 255, 0.35));">
+        </div>
+
+        <!-- 3. Foreground Layer: High-Contrast Editorial Typography & Interactive Controls -->
+        <div class="slide-content-layer">
+          <div class="cover-brand-badge">
+            <img src="assets/brand/hydro_logo_white.png" alt="Hydro Industries" class="cover-brand-logo">
+          </div>
+          <div class="slide-category">Company Overview</div>
+          <h1 class="slide-title-hero">Water.<br>Technology.<br><em>Possibility.</em></h1>
+          <p class="slide-subtitle">Water purification and industrial effluent processing</p>
+          <div class="cta-details-row">
+            <button class="btn-see-details" aria-label="See details for Company Overview">
+              See Details
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 02: Introduction -->
+      <section class="slide" data-index="1">
+        <div class="monumental-bg-text">WATER</div>
+<div class="slide-content-layer">
+          <div class="slide-category">01 / Introduction</div>
+          <h2 class="slide-title-hero">Technology for<br>a world of <em>water.</em></h2>
+          <p class="slide-subtitle">Hydro designs, constructs, installs and operates effective water treatment solutions.</p>
+          
+          <div class="grid-2col" style="margin-top: 24px;">
+            <div class="glass-card middleground-card">
+              <h3 class="card-title">Designed around each client</h3>
+              <p class="card-desc">End-to-end treatment solutions combine modular process steps for industrial and drinking water applications.</p>
+            </div>
+            <div class="glass-card middleground-card">
+              <h3 class="card-title">Proprietary technology. Global deployment.</h3>
+              <p class="card-desc">Patented technologies and processes support solutions across a wide range of industries and geographies.</p>
+            </div>
+          </div>
+
+          <div class="cta-details-row">
+            <button class="btn-see-details" aria-label="See details for 01 / Introduction">
+              See Details
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 03: Capabilities -->
+      <section class="slide" data-index="2">
+        <div class="monumental-bg-text">SYSTEM</div>
+<div class="slide-content-layer">
+          <div class="slide-category">02 / Capabilities</div>
+          <h2 class="slide-title-hero">From design<br>to <em>operation.</em></h2>
+          
+          <div class="grid-4col" style="margin-top: 32px;">
+            <div class="glass-card middleground-card">
+              <div class="card-num">01</div>
+              <h3 class="card-title">Design</h3>
+              <p class="card-desc">Custom solutions for industrial and drinking water applications.</p>
+            </div>
+            <div class="glass-card middleground-card">
+              <div class="card-num">02</div>
+              <h3 class="card-title">Construct</h3>
+              <p class="card-desc">Treatment systems built around modular process steps.</p>
+            </div>
+            <div class="glass-card middleground-card">
+              <div class="card-num">03</div>
+              <h3 class="card-title">Install</h3>
+              <p class="card-desc">Deployment across different industries and geographies.</p>
+            </div>
+            <div class="glass-card middleground-card">
+              <div class="card-num">04</div>
+              <h3 class="card-title">Operate</h3>
+              <p class="card-desc">Operation of effective water treatment solutions.</p>
+            </div>
+          </div>
+
+          <div class="cta-details-row">
+            <button class="btn-see-details" aria-label="See details for 02 / Capabilities">
+              See Details
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 04: Case Studies Separator -->
+      <section class="slide" data-index="3">
+        <div class="monumental-bg-text">IMPACT</div>
+<div class="slide-content-layer">
+          <div class="slide-category">03 / Case Studies</div>
+          <h2 class="slide-title-hero">Experience<br>with <em>impact.</em></h2>
+          <p class="slide-subtitle">A legacy of dealing with complexity</p>
+          
+          <div class="cta-details-row">
+            <button class="btn-see-details" aria-label="See details for 03 / Case Studies">
+              See Details
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 05: Case Study / Quito, Ecuador -->
+      <section class="slide" data-index="4">
+        <div class="monumental-bg-text">QUITO</div>
+<div class="slide-content-layer">
+          <div class="slide-category">Case Study / Quito, Ecuador</div>
+          <div class="grid-2col">
+            <div>
+              <div style="font-family: var(--font-mono); font-size: 13px; color: var(--accent-cyan); margin-bottom: 8px;">MUNICIPALITY OF QUITO</div>
+              <h2 class="slide-title-hero" style="font-size: clamp(38px, 4.5vw, 64px);">Protecting<br>river <em>basins.</em></h2>
+              <p class="slide-subtitle" style="font-size: 17px; margin-bottom: 24px;">Hydro built a leachate treatment plant to treat a chemically toxic mixture of heavy metals and carbon-based pollutants, allowing treated water to return safely to the environment.</p>
+              
+              <div class="metric-highlight">600–800</div>
+              <div class="metric-label">tonnes of leachate produced per day at the landfill</div>
+              <div style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); margin-top: 14px;">PROJECT COMPLETED / Q3 2024</div>
+              
+              <div class="cta-details-row">
+                <button class="btn-see-details" aria-label="See details for Case Study / Quito, Ecuador">
+                  See Details
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="visual-frame middleground-card">
+              <img src="assets/images/quito_plant.jpg" alt="Quito Leachate Treatment Plant">
+              <div class="visual-tag">QUITO FACILITY / ECUADOR</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 06: Case Study / Frongoch, Wales -->
+      <section class="slide" data-index="5">
+        <div class="monumental-bg-text">WALES</div>
+<div class="slide-content-layer">
+          <div class="slide-category">Case Study / Frongoch, Wales</div>
+          <div style="font-family: var(--font-mono); font-size: 13px; color: var(--accent-cyan); margin-bottom: 12px;">NATURAL RESOURCES WALES</div>
+          
+          <div class="grid-2col">
+            <div class="glass-card middleground-card" style="padding: 40px;">
+              <div class="metric-highlight">>98%</div>
+              <div class="metric-label" style="font-size: 24px; font-weight: 600; color: #fff; margin-bottom: 8px;">Removal of metal pollutants from the water</div>
+            </div>
+
+            <div>
+              <h2 class="slide-title-hero" style="font-size: clamp(38px, 4.5vw, 64px); margin-bottom: 18px;">A measurable<br><em>difference.</em></h2>
+              <p class="slide-subtitle" style="font-size: 18px; margin-bottom: 28px;">Hydro reviewed one of the most polluting mines in Wales and applied its electro-coagulation technology.</p>
+              
+              <div class="grid-2col" style="gap: 20px;">
+                <div class="glass-card middleground-card" style="padding: 20px;">
+                  <div class="metric-highlight" style="font-size: 42px;">1,300+</div>
+                  <div class="metric-label" style="font-size: 14px;">abandoned metal mines in Wales</div>
+                </div>
+                <div class="glass-card middleground-card" style="padding: 20px;">
+                  <div class="metric-highlight" style="font-size: 42px;">200+ km</div>
+                  <div class="metric-label" style="font-size: 14px;">of rivers impacted by these mines</div>
+                </div>
+              </div>
+
+              <div class="cta-details-row">
+                <button class="btn-see-details" aria-label="See details for Case Study / Frongoch, Wales">
+                  See Details
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 07: Case Study / Roadbridge, South Wales -->
+      <section class="slide" data-index="6">
+        <div class="monumental-bg-text">CLARITY</div>
+<div class="slide-content-layer">
+          <div class="slide-category">Case Study / Roadbridge, South Wales</div>
+          <h2 class="slide-title-hero" style="font-size: clamp(40px, 5vw, 70px);">Clear results.<br><em>Measured.</em></h2>
+          
+          <div class="grid-2col" style="margin-top: 16px;">
+            <div class="comparison-container middleground-card">
+              <div style="font-family: var(--font-mono); font-size: 12px; color: var(--accent-cyan); letter-spacing: 1.5px; margin-bottom: 20px;">TURBIDITY / NTU (Common linear scale)</div>
+              
+              <div class="bar-row">
+                <div class="bar-info">
+                  <span>Raw water</span>
+                  <span style="font-family: var(--font-mono); font-weight: 700;">828 NTU</span>
+                </div>
+                <div class="bar-track">
+                  <div class="bar-fill raw" style="width: 100%;">828</div>
+                </div>
+              </div>
+
+              <div class="bar-row">
+                <div class="bar-info">
+                  <span>Treated water</span>
+                  <span style="font-family: var(--font-mono); font-weight: 700; color: #00d2ff;">5.91 NTU</span>
+                </div>
+                <div class="bar-track">
+                  <div class="bar-fill treated" style="width: 0.71%;">5.91</div>
+                </div>
+              </div>
+
+              <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 16px;">Baseline 0 NTU. Source: HYDRO case study.</div>
+
+              <!-- Visual Beaker Clarification Comparison -->
+              <div class="clarification-sim">
+                <div class="beaker-card">
+                  <div class="beaker-visual">
+                    <div class="beaker-liquid raw"></div>
+                  </div>
+                  <div style="font-size: 11px; font-family: var(--font-mono); color: #f59e0b;">Raw Runoff (828 NTU)</div>
+                </div>
+                <div class="beaker-card">
+                  <div class="beaker-visual">
+                    <div class="beaker-liquid treated" id="dynamic-beaker-liquid"></div>
+                  </div>
+                  <div style="font-size: 11px; font-family: var(--font-mono); color: #00d2ff;">Hydro Purified (5.91 NTU)</div>
+                </div>
+              </div>
+
+              <!-- Interactive Clarification Scrub Control -->
+              <div class="clarification-slider-wrap" style="margin-top: 14px; background: rgba(0, 210, 255, 0.05); padding: 12px; border-radius: 10px; border: 1px solid rgba(0, 210, 255, 0.15);">
+                <div style="display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; margin-bottom: 6px;">
+                  <span style="color: #f59e0b;">Turbidity Treatment Scrub:</span>
+                  <span id="slider-ntu-readout" style="color: #00d2ff; font-weight: 700;">5.91 NTU (99.3% reduction)</span>
+                </div>
+                <input type="range" id="turbidity-slider" min="0" max="100" value="100" aria-label="Turbidity clarification level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" style="width: 100%; accent-color: #00d2ff; cursor: pointer;">
+              </div>
+            </div>
+
+            <div>
+              <div class="metric-highlight">>99%</div>
+              <div class="metric-label" style="font-size: 26px; font-weight: 600; color: #fff; margin-bottom: 16px;">Removal rate</div>
+              <p class="slide-subtitle" style="font-size: 16px; margin-bottom: 16px;">Four treatment plants used Hydro Current technology to remove suspended particles from construction runoff.</p>
+              <p style="font-size: 14px; color: var(--text-muted);">Treatment met stringent water quality standards enforced by the Environment Agency.</p>
+              
+              <div class="cta-details-row">
+                <button class="btn-see-details" aria-label="See details for Case Study / Roadbridge, South Wales">
+                  See Details
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 08: Treatment Performance Matrix -->
+      <section class="slide" data-index="7">
+        <div class="monumental-bg-text">PURITY</div>
+<div class="slide-content-layer">
+          <div class="slide-category">04 / Treatment Performance</div>
+        <h2 class="slide-title-hero" style="font-size: clamp(38px, 4.5vw, 64px);">Complex water.<br><em>Clear evidence.</em></h2>
+        <p class="slide-subtitle" style="font-size: 16px; margin-bottom: 12px;">Example of a Hydro treatment configuration, comparing input water, treated water and output requirements.</p>
+        
+        <div class="table-wrapper middleground-card">
+          <table class="perf-table">
+            <thead>
+              <tr>
+                <th>Parameter</th>
+                <th>Input</th>
+                <th>After Hydro Treatment</th>
+                <th>Output Requirement</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>COD</strong> (Chemical Oxygen Demand)</td>
+                <td class="val-input">4,856</td>
+                <td class="val-treated">26</td>
+                <td>100</td>
+              </tr>
+              <tr>
+                <td><strong>Oil & grease</strong></td>
+                <td class="val-input">300</td>
+                <td class="val-treated">2</td>
+                <td>15</td>
+              </tr>
+              <tr>
+                <td><strong>TSS</strong> (Total Suspended Solids)</td>
+                <td class="val-input">250</td>
+                <td class="val-treated">3</td>
+                <td>60</td>
+              </tr>
+              <tr>
+                <td><strong>BOD</strong> (Biochemical Oxygen Demand)</td>
+                <td class="val-input">2,050</td>
+                <td class="val-treated">8</td>
+                <td>60</td>
+              </tr>
+              <tr>
+                <td><strong>Total nitrogen</strong></td>
+                <td class="val-input">400</td>
+                <td class="val-treated">7</td>
+                <td>10</td>
+              </tr>
+              <tr>
+                <td><strong>Ammonia</strong></td>
+                <td class="val-input">247</td>
+                <td class="val-treated">2</td>
+                <td>3</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        
+        <div id="perf-interactive-note" style="margin-top: 14px; font-size: 13px; color: var(--text-secondary); background: rgba(0, 210, 255, 0.08); border: 1px solid rgba(0, 210, 255, 0.2); border-radius: 8px; padding: 10px 16px;">
+          💡 <em>Tip: Click any parameter row above to inspect exact elimination rates.</em>
+        </div>
+
+        <div style="font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 10px;">Selected parameters from the original technical dataset. All values in mg/l.</div>
+
+        <div class="cta-details-row">
+          <button class="btn-see-details" aria-label="See details for 04 / Treatment Performance">
+            See Details
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- SLIDE 09: Corporate Development -->
+      <section class="slide" data-index="8">
+        <div class="monumental-bg-text">PROGRESS</div>
+        <div class="slide-content-layer">
+          <div class="slide-category">05 / Corporate Development</div>
+        <div class="grid-2col">
+          <div>
+            <h2 class="slide-title-hero" style="font-size: clamp(38px, 4.5vw, 64px);">A history of<br><em>progress.</em></h2>
+            <div style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); margin-bottom: 24px;">Selected milestones / 2010–2026</div>
+
+            <div class="visual-frame" style="height: 320px;">
+              <img src="assets/images/water_engineers.jpg" alt="Hydro Environmental Engineers">
+              <div class="visual-tag">HYDRO ENGINEERING TEAM / DEPLOYMENT</div>
+            </div>
+
+            <div class="cta-details-row">
+              <button class="btn-see-details" aria-label="See details for 05 / Corporate Development">
+                See Details
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="timeline-list">
+            <div class="timeline-item">
+              <div class="timeline-year">2010</div>
+              <div class="timeline-content">
+                <h4>Hydro founded</h4>
+                <p>The beginning of Hydro Industries.</p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-year">2018</div>
+              <div class="timeline-content">
+                <h4>BEE’AH commissioned</h4>
+                <p>Wastewater treatment plant in Sharjah, UAE.</p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-year">2024</div>
+              <div class="timeline-content">
+                <h4>Quito leachate plant</h4>
+                <p>Project completed in Q3 2024.</p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-year">2025</div>
+              <div class="timeline-content">
+                <h4>Group development</h4>
+                <p>JEMS Environmental team joins the Hydro Group.</p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-year">2026</div>
+              <div class="timeline-content">
+                <h4>Expanding applications</h4>
+                <p>Projects include Sucre, Montecristi and Santa Cruz.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 10: Group Structure -->
+      <section class="slide" data-index="9">
+        <div class="monumental-bg-text">GLOBAL</div>
+        <div class="slide-content-layer">
+          <div class="slide-category">06 / Group Structure</div>
+        <div class="grid-2col">
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 13px; color: var(--accent-cyan); margin-bottom: 8px;">UNITED KINGDOM</div>
+            <h2 class="slide-title-hero" style="font-size: clamp(38px, 4.5vw, 64px);">One group.<br>International<br><em>presence.</em></h2>
+            <p class="slide-subtitle" style="font-size: 18px; margin-bottom: 16px;"><strong>Hydro Industries Limited</strong><br>United Kingdom</p>
+            <p style="font-size: 15px; color: var(--text-secondary); line-height: 1.6;">Wholly owned entities support the group’s international presence, alongside a joint venture office in Bahrain.</p>
+
+            <div class="cta-details-row">
+              <button class="btn-see-details" aria-label="See details for 06 / Group Structure">
+                See Details
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 12px; color: var(--accent-cyan); letter-spacing: 1.5px; margin-bottom: 16px;">WHOLLY OWNED / 100%</div>
+            <div class="hub-list">
+              <div class="hub-item">
+                <span class="hub-name">Hydro Ecuador</span>
+                <span class="hub-country">Ecuador</span>
+              </div>
+              <div class="hub-item">
+                <span class="hub-name">Hydro Colombia</span>
+                <span class="hub-country">Colombia</span>
+              </div>
+              <div class="hub-item">
+                <span class="hub-name">Hydro Saudi Arabia</span>
+                <span class="hub-country">Saudi Arabia</span>
+              </div>
+              <div class="hub-item">
+                <span class="hub-name">Hydro Egypt</span>
+                <span class="hub-country">Egypt</span>
+              </div>
+              <div class="hub-item">
+                <span class="hub-name">Hydro Environmental Ltd</span>
+                <span class="hub-country">United Kingdom</span>
+              </div>
+            </div>
+
+            <div style="margin-top: 24px; font-family: var(--font-mono); font-size: 12px; color: var(--accent-cyan); letter-spacing: 1.5px; margin-bottom: 12px;">JOINT VENTURE OFFICE</div>
+            <div class="hub-item" style="border-color: rgba(0, 210, 255, 0.4);">
+              <span class="hub-name">Hydro Regional Operations</span>
+              <span class="hub-country">Bahrain</span>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 11: Case Study / BEE'AH, Sharjah -->
+      <section class="slide" data-index="10">
+        <div class="monumental-bg-text">SHARJAH</div>
+        <div class="slide-content-layer">
+          <div class="slide-category">Case Study / BEE’AH, Sharjah</div>
+        <div class="grid-2col">
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 13px; color: var(--accent-cyan); margin-bottom: 8px;">WASTEWATER TREATMENT / UAE</div>
+            <h2 class="slide-title-hero" style="font-size: clamp(38px, 4.5vw, 64px);">Wastewater.<br><em>New purpose.</em></h2>
+            <p class="slide-subtitle" style="font-size: 17px; margin-bottom: 24px;">A treatment system for landfill liquid waste and local industrial effluent, engineered to provide irrigation-quality water for reuse.</p>
+            
+            <div class="grid-2col" style="gap: 24px; margin-bottom: 24px;">
+              <div>
+                <div class="metric-highlight">500</div>
+                <div class="metric-label">m³/day treatment capacity</div>
+              </div>
+              <div>
+                <div class="metric-highlight">1.5m</div>
+                <div class="metric-label">tonnes treated since inception<br><small style="color: var(--text-muted); font-size: 12px;">Approx. / October 2026</small></div>
+              </div>
+            </div>
+
+            <div style="font-family: var(--font-mono); font-size: 12px; color: var(--accent-cyan); letter-spacing: 1.5px;">COMMISSIONED Q2 2018</div>
+
+            <div class="cta-details-row">
+              <button class="btn-see-details" aria-label="See details for Case Study / BEE’AH, Sharjah">
+                See Details
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="visual-frame">
+            <img src="assets/images/beeah_plant.jpg" alt="BEE'AH Sharjah Treatment Plant">
+            <div class="visual-tag">SHARJAH RECLAMATION FACILITY / UAE</div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 12: Technology Development / Desalination -->
+      <section class="slide" data-index="11">
+        <div class="monumental-bg-text">70%+</div>
+        <div class="slide-content-layer">
+          <div class="slide-category">07 / Technology Development</div>
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
+          <h2 class="slide-title-hero" style="margin-bottom: 0;">More freshwater.<br><em>Higher yield.</em></h2>
+          <div style="font-family: var(--font-mono); font-size: 13px; color: var(--accent-cyan); letter-spacing: 1.5px;">DESALINATION / UK & MENA</div>
+        </div>
+
+        <div class="grid-2col" style="margin-top: 32px;">
+          <div class="glass-card">
+            <div style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); letter-spacing: 1.5px; margin-bottom: 12px;">TRADITIONAL TECHNOLOGIES</div>
+            <div class="metric-highlight" style="color: #94a3b8; text-shadow: none;">40–50%</div>
+            <div class="metric-label">Typical freshwater yield</div>
+          </div>
+
+          <div class="glass-card" style="border-color: rgba(0, 210, 255, 0.4);">
+            <div style="font-family: var(--font-mono); font-size: 12px; color: var(--accent-cyan); letter-spacing: 1.5px; margin-bottom: 12px;">HYDRO TECHNOLOGY / IN DEVELOPMENT</div>
+            <div class="metric-highlight">70%+</div>
+            <div class="metric-label">Freshwater yield capability</div>
+          </div>
+        </div>
+
+        <p class="slide-subtitle" style="font-size: 16px; margin-top: 32px; max-width: 800px;">Hydro’s development case describes reduced brine reject and lower energy consumption alongside higher freshwater yields.</p>
+
+        <div class="cta-details-row">
+          <button class="btn-see-details" aria-label="See details for 07 / Technology Development">
+            See Details
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </button>
+        </div>
+        </div>
+      </section>
+
+      <!-- SLIDE 13: Case Study / Capestone Organic Poultry -->
+      <section class="slide" data-index="12">
+        <div class="monumental-bg-text">CIRCULAR</div>
+        <div class="slide-content-layer">
+          <div class="slide-category">Case Study / Capestone Organic Poultry, UK</div>
+        <div class="grid-2col">
+          <div>
+            <div style="font-family: var(--font-mono); font-size: 13px; color: var(--accent-cyan); margin-bottom: 8px;">WASTEWATER RECOVERY / PLANT IN DEVELOPMENT</div>
+            <h2 class="slide-title-hero" style="font-size: clamp(38px, 4.5vw, 64px);">Recover.<br>Reuse. <em>Repeat.</em></h2>
+            
+            <div class="visual-frame" style="height: 280px; margin-top: 18px;">
+              <img src="assets/images/equipment_skid.jpg" alt="Treatment Equipment Skid Illustration">
+              <div class="visual-tag">TREATMENT EQUIPMENT SKID CONFIGURATION</div>
+            </div>
+
+            <div class="process-pipeline">
+              <span class="process-chip active" data-desc="Screening: Removes coarse solids, feathers, and organic particulates >1mm">01. Screening</span>
+              <span class="process-chip" data-desc="DAF (Dissolved Air Flotation): Micro-bubble flotation separates fats, oils, and grease (FOG)">02. DAF</span>
+              <span class="process-chip" data-desc="MBBR (Moving Bed Biofilm Reactor): Aerobic bacterial biofilm digestion eliminates dissolved BOD/COD">03. MBBR</span>
+              <span class="process-chip" data-desc="Reverse Osmosis (RO): High-pressure semi-permeable membranes filter dissolved minerals & ions">04. RO</span>
+              <span class="process-chip" data-desc="UV Disinfection: Ultraviolet germicidal irradiation eliminates 99.99% pathogens for potable reuse">05. UV</span>
+            </div>
+            <div id="process-pipeline-desc" style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-cyan); letter-spacing: 0.5px; margin-top: 10px; min-height: 22px;">
+              Screening: Removes coarse solids, feathers, and organic particulates >1mm
+            </div>
+          </div>
+
+          <div>
+            <div class="glass-card" style="margin-bottom: 24px; border-color: rgba(0, 210, 255, 0.4);">
+              <div style="font-family: var(--font-mono); font-size: 12px; color: var(--accent-cyan); letter-spacing: 1.5px; margin-bottom: 8px;">PLANNED PROCESS WATER REUSE</div>
+              <div class="metric-highlight">70%</div>
+              <div class="metric-label" style="font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 12px;">Up to 70% recovery and reuse</div>
+              <p style="font-size: 14px; color: var(--text-secondary); line-height: 1.6;">Hydro is building a plant designed to reduce pressure on local groundwater. Hydro will also operate and maintain the facility.</p>
+            </div>
+
+            <div class="glass-card">
+              <div class="metric-highlight" style="font-size: 48px;">45 m³/hr</div>
+              <div class="metric-label">Expected output</div>
+            </div>
+
+            <div class="cta-details-row">
+              <button class="btn-see-details" aria-label="See details for Case Study / Capestone Organic Poultry, UK">
+                See Details
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer Navigation & Scrubber -->
+    <footer class="deck-footer">
+      <div class="footer-date-tag">HYDRO INDUSTRIES / OCTOBER 2026</div>
+
+      <div class="progress-scrubber" title="Click anywhere along the timeline to jump">
+        <div class="progress-fill">
+          <div class="progress-pin"></div>
+        </div>
+      </div>
+
+      <div class="nav-buttons">
+        <button class="btn-nav" id="btn-prev" title="Previous Slide (←)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <button class="btn-nav" id="btn-next" title="Next Slide (→)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- Detail Drawer (Slide-in Modal from Reference Video) -->
+  <aside id="detail-drawer">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+      <img src="assets/brand/hydro_logo_white.png" alt="Hydro Industries" style="height: 32px; width: auto; object-fit: contain;">
+      <button class="drawer-close-btn" style="position: static;" title="Close Details (Esc)" aria-label="Close details drawer">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="drawer-tag">Section</div>
+    <h3 class="drawer-title">Details</h3>
+    <div class="drawer-body">
+      <!-- Injected via deck.js -->
+    </div>
+  </aside>
+
+  <!-- Grid Overview Modal (Deck Matrix) -->
+  <div id="grid-overview-modal">
+    <div class="grid-modal-header">
+      <h2 class="grid-modal-title">
+        Deck Matrix Overview
+        <span>13 Slides</span>
+      </h2>
+      <button class="drawer-close-btn" id="btn-close-grid" title="Close Overview (Esc)" aria-label="Close grid overview">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="slides-matrix">
+      <!-- Dynamically rendered or pre-rendered via deck.js -->
+    </div>
+  </div>
+
+  <!-- Keyboard Shortcuts Help Modal -->
+  <div id="help-modal">
+    <div class="help-modal-content">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3 style="font-size: 20px; font-weight: 700; color: #fff; margin: 0; display: flex; align-items: center; gap: 8px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00d2ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          Keyboard & Mouse Controls
+        </h3>
+        <button class="drawer-close-btn" id="btn-close-help" style="position: static;" title="Close (Esc)" aria-label="Close keyboard shortcuts help">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      
+      <table class="shortcuts-table">
+        <tr>
+          <td><span class="key-badge">→</span> / <span class="key-badge">Space</span></td>
+          <td>Next Slide</td>
+        </tr>
+        <tr>
+          <td><span class="key-badge">←</span></td>
+          <td>Previous Slide</td>
+        </tr>
+        <tr>
+          <td><span class="key-badge">D</span> / <span class="key-badge">Enter</span></td>
+          <td>Toggle "See Details" Drawer</td>
+        </tr>
+        <tr>
+          <td><span class="key-badge">G</span></td>
+          <td>Toggle Deck Grid Matrix (13 Slides)</td>
+        </tr>
+        <tr>
+          <td><span class="key-badge">F</span></td>
+          <td>Toggle Fullscreen Mode</td>
+        </tr>
+        <tr>
+          <td><span class="key-badge">A</span></td>
+          <td>Toggle Hands-Free Auto-Play Walkthrough</td>
+        </tr>
+        <tr>
+          <td><span class="key-badge">P</span></td>
+          <td>Toggle Presenter Mode (Clean UI)</td>
+        </tr>
+        <tr>
+          <td><span class="key-badge">Esc</span></td>
+          <td>Close any Active Modal / Drawer</td>
+        </tr>
+        <tr>
+          <td><span class="key-badge">Wheel / Swipe</span></td>
+          <td>Smooth Slide Transitions</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="scene3d.js"></script>
+  <script src="deck.js"></script>
+</body>
+</html>
