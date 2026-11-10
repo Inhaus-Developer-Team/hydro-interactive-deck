@@ -11,6 +11,7 @@
 
 ## 🌟 Key Highlights
 
+- 🌐 **Live Demo (GitHub Pages)**: [**https://inhaus-developer-team.github.io/hydro-interactive-deck/**](https://inhaus-developer-team.github.io/hydro-interactive-deck/)
 - 🌊 **Continuous Water Flight Choreography**: Dual-clip background engine (aerial to submarine) with seamless seam-frame handover at $50\%$ timeline progress, synchronized directly to wheel, touch, and trackpad scroll.
 - 🌍 **Photorealistic 3D Earth Globe**: Accurate spherical projection mapping for active global subsidiaries (UK HQ, Ecuador, Colombia, Saudi Arabia, Egypt, Bahrain) with orbital energy arcs and Fresnel atmospheric Rayleigh scattering.
 - ⚡ **3D Modular Electro-Coagulation Reactor**: Technical 3D model with refractive glass vessel (`MeshPhysicalMaterial`), active anode/cathode rods, and pulsed plasma discharge.
