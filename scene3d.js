@@ -403,53 +403,66 @@ class HydroScene {
     this.hubPins = [];
     this.arcBeams = [];
 
-    // Helper: Canvas Text Sprite Generator for 3D City Labels (High-contrast vivid badges)
-    const createCitySprite = (cityName, isHQ, country) => {
+    // Helper: Canvas Text Sprite Generator for 3D City Labels (Sci-fi HUD Data Tag Design)
+    const createCitySprite = (hub) => {
       const canvas = document.createElement('canvas');
-      canvas.width = 380;
-      canvas.height = 100;
+      canvas.width = 440;
+      canvas.height = 140;
       const ctx = canvas.getContext('2d');
 
-      // Vivid contrasting badge background with cyan edge glow
-      ctx.fillStyle = isHQ ? 'rgba(0, 42, 98, 0.94)' : 'rgba(1, 14, 38, 0.92)';
-      ctx.strokeStyle = isHQ ? '#00f0ff' : '#00d2ff';
-      ctx.lineWidth = isHQ ? 4 : 3;
+      const isHQ = hub.isHQ;
+      const isJV = hub.isJV;
+      const accentColor = isHQ ? '#ffffff' : (isJV ? '#ffd166' : '#00f0ff');
+      const tagBg = isHQ ? 'rgba(0, 40, 95, 0.95)' : 'rgba(2, 12, 32, 0.92)';
 
-      const r = 20;
-      const x = 12, y = 12, w = 356, h = 76;
+      // 1. Futuristic Glass HUD Tag Body with Corner Chamfer
+      const x = 14, y = 14, w = 412, h = 112, chamfer = 14;
       ctx.beginPath();
-      ctx.moveTo(x + r, y);
-      ctx.lineTo(x + w - r, y);
-      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-      ctx.lineTo(x + w, y + h - r);
-      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-      ctx.lineTo(x + r, y + h);
-      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-      ctx.lineTo(x, y + r);
-      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.moveTo(x + chamfer, y);
+      ctx.lineTo(x + w, y);
+      ctx.lineTo(x + w, y + h - chamfer);
+      ctx.lineTo(x + w - chamfer, y + h);
+      ctx.lineTo(x, y + h);
+      ctx.lineTo(x, y + chamfer);
       ctx.closePath();
+
+      ctx.fillStyle = tagBg;
       ctx.fill();
+
+      // Border with Accent Color Glow
+      ctx.strokeStyle = accentColor;
+      ctx.lineWidth = isHQ ? 3.5 : 2.5;
       ctx.stroke();
 
-      // Inner subtle top highlight
+      // 2. Corner Bracket Detail (High-Tech Engineering Aesthetic)
+      ctx.strokeStyle = isHQ ? '#ffd166' : '#ffffff';
+      ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.moveTo(x + r, y + 2);
-      ctx.lineTo(x + w - r, y + 2);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-      ctx.lineWidth = 1.5;
+      ctx.moveTo(x, y + 26);
+      ctx.lineTo(x, y + chamfer);
+      ctx.lineTo(x + chamfer, y);
+      ctx.lineTo(x + 26, y);
       ctx.stroke();
 
-      // City Name Text (Crisp pure white, large bold)
-      ctx.font = 'bold 26px "Inter", "Segoe UI", sans-serif';
-      ctx.fillStyle = '#ffffff';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(cityName, w / 2 + x, h / 2 + y - 10);
+      // 3. Category / Status Header
+      ctx.font = '700 16px "JetBrains Mono", monospace';
+      ctx.fillStyle = isHQ ? '#ffd166' : (isJV ? '#ffd166' : '#00d2ff');
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const statusText = isHQ ? '★ GLOBAL HEADQUARTERS' : (isJV ? 'REGIONAL JV OFFICE' : 'WHOLLY OWNED SUBSIDIARY');
+      ctx.fillText(statusText, x + 24, y + 20);
 
-      // Country / Role Subtitle (Vivid neon cyan/gold)
-      ctx.font = '600 15px "JetBrains Mono", monospace';
-      ctx.fillStyle = isHQ ? '#ffd166' : '#00f0ff';
-      ctx.fillText(isHQ ? '★ GLOBAL HEADQUARTERS' : country.toUpperCase(), w / 2 + x, h / 2 + y + 16);
+      // 4. Primary City Name (Large, crisp, high contrast)
+      ctx.font = '800 32px "Inter", "Segoe UI", sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(hub.city.toUpperCase(), x + 24, y + 46);
+
+      // 5. Geographic Coordinate & Country Tagline
+      ctx.font = '500 16px "JetBrains Mono", monospace';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+      const latStr = `${Math.abs(hub.lat).toFixed(1)}°${hub.lat >= 0 ? 'N' : 'S'}`;
+      const lonStr = `${Math.abs(hub.lon).toFixed(1)}°${hub.lon >= 0 ? 'E' : 'W'}`;
+      ctx.fillText(`${hub.country.toUpperCase()}  •  ${latStr}, ${lonStr}`, x + 24, y + 84);
 
       const texture = new THREE.CanvasTexture(canvas);
       texture.minFilter = THREE.LinearFilter;
@@ -459,17 +472,27 @@ class HydroScene {
         depthWrite: false
       });
       const sprite = new THREE.Sprite(spriteMat);
-      sprite.scale.set(1.1, 0.28, 1);
+      sprite.scale.set(1.25, 0.40, 1);
       return sprite;
     };
 
-    // Generate Pins, Pulsing Beacons, Text Sprites & Arcs
+    // Staggered Radial Heights for Labels to Prevent Overlap:
+    // Cairo & Riyadh & Manama are geographically clustered in the Middle East.
+    // Staggering their radial heights (1.20, 1.40, 1.62) completely eliminates 2D screen stacking.
+    const labelAltitudeMap = {
+      "UK Global HQ": 1.28,
+      "Hydro Ecuador": 1.24,
+      "Hydro Colombia": 1.48,
+      "Hydro Egypt": 1.22,
+      "Hydro Saudi Arabia": 1.46,
+      "Hydro Regional Operations": 1.68
+    };
+
+    // Generate Pins, Stems, Pulsing Beacons, Text Sprites & Arcs
     hubs.forEach(hub => {
       const pos = latLongToVector3(hub.lat, hub.lon, radius);
 
       // Pin Color Palette: High Contrast vs Earth Blue/Green
-      // UK HQ = Pure White core with Gold Beacon
-      // Regional Hubs = Vivid Neon Coral/Gold/Cyan
       const pinColor = hub.isHQ ? 0xffffff : (hub.isJV ? 0xffd166 : 0x00f0ff);
       const ringColor = hub.isHQ ? 0x00e5ff : (hub.isJV ? 0xffaa00 : 0x00ffff);
 
@@ -480,13 +503,21 @@ class HydroScene {
       pinMesh.position.copy(pos.clone().multiplyScalar(1.022));
       this.globeGroup.add(pinMesh);
 
-      // Pin Needle / Stem pointing to exact ground coordinates
-      const stemPoints = [pos, pos.clone().multiplyScalar(1.03)];
+      // High-Tech Stalk / Beacon Stem extending from globe surface directly to label height
+      const labelAltitude = labelAltitudeMap[hub.name] || 1.30;
+      const labelPos = pos.clone().multiplyScalar(labelAltitude);
+
+      const stemPoints = [pos, labelPos];
       const stemGeo = new THREE.BufferGeometry().setFromPoints(stemPoints);
-      const stemMat = new THREE.LineBasicMaterial({ color: ringColor, linewidth: 2 });
+      const stemMat = new THREE.LineBasicMaterial({
+        color: ringColor,
+        transparent: true,
+        opacity: 0.65,
+        linewidth: 2
+      });
       this.globeGroup.add(new THREE.Line(stemGeo, stemMat));
 
-      // Radial Glowing Pulse Ring (High Contrast)
+      // Radial Glowing Pulse Ring at Ground Contact
       const ringGeo = new THREE.RingGeometry(0.07, 0.14, 28);
       const ringMat = new THREE.MeshBasicMaterial({
         color: ringColor,
@@ -502,11 +533,11 @@ class HydroScene {
       this.globeGroup.add(ringMesh);
 
       // 3D Floating City Label Sprite
-      const sprite = createCitySprite(hub.city, hub.isHQ, hub.country);
-      sprite.position.copy(pos.clone().multiplyScalar(1.24));
+      const sprite = createCitySprite(hub);
+      sprite.position.copy(labelPos);
       this.globeGroup.add(sprite);
 
-      this.hubPins.push({ mesh: pinMesh, ring: ringMesh, sprite, isHQ: hub.isHQ, hub });
+      this.hubPins.push({ mesh: pinMesh, ring: ringMesh, sprite, isHQ: hub.isHQ, hub, worldPos: pos });
 
       // Curved Orbital Flight / Data Arcs from UK HQ to each Subsidiary
       if (!hub.isHQ) {
@@ -842,11 +873,25 @@ class HydroScene {
       const targetGlobeZ = isMobile ? 0.6 : 1.2;
       this.globeGroup.position.lerp(new THREE.Vector3(targetGlobeX, targetGlobeY, targetGlobeZ), 0.06);
 
-      // Animate pulsing beacon rings
+      // Animate pulsing beacon rings and dynamic front/back label occlusion
       if (this.hubPins) {
+        // Calculate camera forward direction in globe local space to fade back-facing labels
+        const camWorldPos = this.camera.position.clone();
         this.hubPins.forEach(item => {
           const s = 1.0 + Math.sin(this.time * 4.0 + (item.isHQ ? 0 : 1.5)) * 0.28;
           item.ring.scale.set(s, s, s);
+
+          if (item.sprite && item.worldPos) {
+            // Transform world normal of city pin by current globe rotation
+            const pinWorldNormal = item.worldPos.clone().applyEuler(this.globeGroup.rotation).normalize();
+            const viewDir = camWorldPos.clone().sub(this.globeGroup.position).normalize();
+            const dot = pinWorldNormal.dot(viewDir);
+
+            // If city is on the visible front hemisphere (dot > 0.05), show label; if on backside, smoothly fade
+            const opacity = THREE.MathUtils.clamp((dot - 0.05) * 4.0, 0.0, 1.0);
+            item.sprite.material.opacity = opacity;
+            item.sprite.visible = opacity > 0.02;
+          }
         });
       }
 
