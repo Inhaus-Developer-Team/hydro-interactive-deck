@@ -290,33 +290,50 @@ class HydroScene {
   initGlobalPresenceGlobe() {
     // 3D Photorealistic Interactive Earth Globe for Slide 10 (Global Presence)
     this.globeGroup = new THREE.Group();
+    // Default position (adjusted responsively in updateCameraForSlide)
     this.globeGroup.position.set(3.2, 0, 1.5);
     this.globeGroup.scale.set(0, 0, 0);
 
     const radius = 2.25;
 
-    // 1. Realistic Earth Spherical Mesh with High-Fidelity Continents Texture
+    // 1. Authentic NASA Blue Marble Photorealistic Earth Mesh
     const textureLoader = new THREE.TextureLoader();
     const earthTexture = textureLoader.load('assets/images/earth_surface_realistic.jpg');
     earthTexture.colorSpace = THREE.SRGBColorSpace;
     earthTexture.wrapS = THREE.RepeatWrapping;
     earthTexture.wrapT = THREE.ClampToEdgeWrapping;
 
-    const earthGeo = new THREE.SphereGeometry(radius, 64, 64);
-    // Orient texture so prime meridian (0 lon) aligns with standard rotation
-    earthGeo.rotateY(-Math.PI / 2);
+    // Specular ocean map for realistic sun gleam on water vs matte continents
+    const specularTexture = textureLoader.load('assets/images/earth_specular.jpg');
 
-    const earthMat = new THREE.MeshStandardMaterial({
+    const earthGeo = new THREE.SphereGeometry(radius, 64, 64);
+    // Note: No arbitrary rotateY, so UV u=0.5 directly matches prime meridian (Lon 0)
+
+    const earthMat = new THREE.MeshPhongMaterial({
       map: earthTexture,
-      roughness: 0.72,
-      metalness: 0.18,
-      bumpScale: 0.04
+      specularMap: specularTexture,
+      specular: new THREE.Color(0x226688),
+      shininess: 25,
+      bumpScale: 0.05
     });
     this.earthMesh = new THREE.Mesh(earthGeo, earthMat);
     this.globeGroup.add(this.earthMesh);
 
-    // 2. Atmospheric Fresnel Glow Shell
-    const atmoGeo = new THREE.SphereGeometry(radius * 1.045, 48, 48);
+    // 2. Translucent Dynamic Cloud Layer (Rotating slightly faster for depth)
+    const cloudsTexture = textureLoader.load('assets/images/earth_clouds.jpg');
+    const cloudsGeo = new THREE.SphereGeometry(radius * 1.012, 48, 48);
+    const cloudsMat = new THREE.MeshStandardMaterial({
+      alphaMap: cloudsTexture,
+      transparent: true,
+      opacity: 0.38,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    this.cloudsMesh = new THREE.Mesh(cloudsGeo, cloudsMat);
+    this.globeGroup.add(this.cloudsMesh);
+
+    // 3. Atmospheric Rayleigh Scattering Fresnel Shell
+    const atmoGeo = new THREE.SphereGeometry(radius * 1.055, 48, 48);
     const atmoShader = {
       vertexShader: `
         varying vec3 vNormal;
@@ -332,9 +349,9 @@ class HydroScene {
         varying vec3 vPosition;
         void main() {
           vec3 viewDir = normalize(-vPosition);
-          float fresnel = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 3.2);
-          vec3 atmoColor = vec3(0.0, 0.78, 1.0);
-          gl_FragColor = vec4(atmoColor, fresnel * 0.75);
+          float fresnel = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 3.4);
+          vec3 atmoColor = vec3(0.05, 0.72, 1.0);
+          gl_FragColor = vec4(atmoColor, fresnel * 0.85);
         }
       `
     };
@@ -350,9 +367,10 @@ class HydroScene {
     this.atmoMesh = new THREE.Mesh(atmoGeo, atmoMat);
     this.globeGroup.add(this.atmoMesh);
 
-    // 3. Exact Coordinate Converter for Three.js UV aligned sphere
-    // phi: 0 at North Pole (+90 lat), PI at South Pole (-90 lat)
-    // theta: longitude in radians
+    // 4. Exact Geographic Coordinates Conversion for Three.js UV Spherical Coordinates:
+    // Equirectangular mapping in Three.js:
+    // phi: 0 at North Pole (+90 lat) to PI at South Pole (-90 lat)
+    // theta: longitude in radians mapped with offset so Prime Meridian (lon 0) aligns with vertex normal
     const latLongToVector3 = (lat, lon, r) => {
       const phi = (90 - lat) * (Math.PI / 180);
       const theta = (lon + 180) * (Math.PI / 180);
@@ -363,34 +381,81 @@ class HydroScene {
       );
     };
 
-    // Geographic Hubs (Hydro Group Entities)
+    // Real verified operating cities and official subsidiaries of Hydro Industries:
     const hubs = [
-      { name: "UK (HQ)", city: "London", lat: 51.5, lon: -0.12, isHQ: true },
-      { name: "Ecuador", city: "Quito", lat: -0.18, lon: -78.46 },
-      { name: "Colombia", city: "Bogotá", lat: 4.71, lon: -74.07 },
-      { name: "Saudi Arabia", city: "Riyadh", lat: 24.71, lon: 46.67 },
-      { name: "Egypt", city: "Cairo", lat: 30.04, lon: 31.23 },
-      { name: "Bahrain", city: "Manama", lat: 26.22, lon: 50.58, isJV: true }
+      { name: "UK Global HQ", city: "Llangennech / London", country: "United Kingdom", lat: 51.5074, lon: -0.1278, isHQ: true },
+      { name: "Hydro Ecuador", city: "Quito", country: "Ecuador", lat: -0.1807, lon: -78.4678, isHQ: false },
+      { name: "Hydro Colombia", city: "Bogotá", country: "Colombia", lat: 4.7110, lon: -74.0721, isHQ: false },
+      { name: "Hydro Saudi Arabia", city: "Riyadh", country: "Saudi Arabia", lat: 24.7136, lon: 46.6753, isHQ: false },
+      { name: "Hydro Egypt", city: "Cairo", country: "Egypt", lat: 30.0444, lon: 31.2357, isHQ: false },
+      { name: "Hydro Regional Operations", city: "Manama", country: "Bahrain", lat: 26.2285, lon: 50.5860, isJV: true }
     ];
 
-    const hqPos = latLongToVector3(51.5, -0.12, radius);
+    const hqPos = latLongToVector3(51.5074, -0.1278, radius);
     this.hubPins = [];
     this.arcBeams = [];
 
-    // Pin Beacon Creator
+    // Helper: Canvas Text Sprite Generator for 3D City Labels
+    const createCitySprite = (cityName, isHQ) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 320;
+      canvas.height = 80;
+      const ctx = canvas.getContext('2d');
+
+      // Rounded badge pill
+      ctx.fillStyle = isHQ ? 'rgba(0, 30, 70, 0.88)' : 'rgba(2, 10, 26, 0.82)';
+      ctx.strokeStyle = isHQ ? '#00e5ff' : 'rgba(0, 210, 255, 0.45)';
+      ctx.lineWidth = 3;
+
+      const r = 18;
+      const x = 10, y = 10, w = 300, h = 60;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Text Label
+      ctx.font = 'bold 24px "Inter", "Segoe UI", sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(cityName, w / 2 + x, h / 2 + y);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter;
+      const spriteMat = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false
+      });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(0.9, 0.225, 1);
+      return sprite;
+    };
+
+    // Generate Pins, Pulsing Beacons, Text Sprites & Arcs
     hubs.forEach(hub => {
       const pos = latLongToVector3(hub.lat, hub.lon, radius);
 
-      // Pin base anchor
+      // Pin Base Anchor (Elevated pin head + subtle stem)
       const pinColor = hub.isHQ ? 0xffffff : (hub.isJV ? 0x00f0ff : 0x00e5ff);
-      const pinGeo = new THREE.SphereGeometry(hub.isHQ ? 0.08 : 0.05, 16, 16);
+      const pinGeo = new THREE.SphereGeometry(hub.isHQ ? 0.085 : 0.055, 16, 16);
       const pinMat = new THREE.MeshBasicMaterial({ color: pinColor });
       const pinMesh = new THREE.Mesh(pinGeo, pinMat);
-      pinMesh.position.copy(pos);
+      pinMesh.position.copy(pos.clone().multiplyScalar(1.018));
       this.globeGroup.add(pinMesh);
 
-      // Glowing Pulsing Beacon Ring
-      const ringGeo = new THREE.RingGeometry(0.06, 0.11, 24);
+      // Radial Glowing Pulse Ring
+      const ringGeo = new THREE.RingGeometry(0.065, 0.12, 24);
       const ringMat = new THREE.MeshBasicMaterial({
         color: pinColor,
         side: THREE.DoubleSide,
@@ -400,33 +465,38 @@ class HydroScene {
         blending: THREE.AdditiveBlending
       });
       const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-      ringMesh.position.copy(pos.clone().multiplyScalar(1.015));
+      ringMesh.position.copy(pos.clone().multiplyScalar(1.022));
       ringMesh.lookAt(pos.clone().multiplyScalar(2.0));
       this.globeGroup.add(ringMesh);
 
-      this.hubPins.push({ mesh: pinMesh, ring: ringMesh, isHQ: hub.isHQ, hub });
+      // 3D Floating City Label Sprite
+      const sprite = createCitySprite(hub.city, hub.isHQ);
+      sprite.position.copy(pos.clone().multiplyScalar(1.22));
+      this.globeGroup.add(sprite);
 
-      // Curved Orbital Arcs from UK HQ to each global entity
+      this.hubPins.push({ mesh: pinMesh, ring: ringMesh, sprite, isHQ: hub.isHQ, hub });
+
+      // Curved Orbital Flight / Data Arcs from UK HQ to each Subsidiary
       if (!hub.isHQ) {
         const mid = pos.clone().add(hqPos).multiplyScalar(0.5);
         const distance = pos.distanceTo(hqPos);
-        const arcAltitude = radius + Math.min(distance * 0.42, 1.15);
+        const arcAltitude = radius + Math.min(distance * 0.38, 1.1);
         mid.normalize().multiplyScalar(arcAltitude);
 
         const curve = new THREE.QuadraticBezierCurve3(hqPos, mid, pos);
-        const curvePoints = curve.getPoints(36);
+        const curvePoints = curve.getPoints(40);
         const arcGeo = new THREE.BufferGeometry().setFromPoints(curvePoints);
         const arcMat = new THREE.LineBasicMaterial({
           color: 0x00d2ff,
           transparent: true,
-          opacity: 0.65,
+          opacity: 0.7,
           blending: THREE.AdditiveBlending
         });
         const arcLine = new THREE.Line(arcGeo, arcMat);
         this.globeGroup.add(arcLine);
 
-        // Travelling light pulse packet along each arc
-        const pulseGeo = new THREE.SphereGeometry(0.038, 10, 10);
+        // Travelling Light Packet along Arc
+        const pulseGeo = new THREE.SphereGeometry(0.04, 12, 12);
         const pulseMat = new THREE.MeshBasicMaterial({
           color: 0xffffff,
           blending: THREE.AdditiveBlending
@@ -646,8 +716,20 @@ class HydroScene {
       this.globeGroup.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.08);
       
       // Continuous gentle planetary spin
-      this.globeGroup.rotation.y += 0.0055;
-      this.globeGroup.rotation.x = 0.22 + this.mouse.y * 0.12;
+      this.globeGroup.rotation.y += 0.0042;
+      this.globeGroup.rotation.x = 0.18 + this.mouse.y * 0.10;
+
+      // Animate dynamic cloud drift layer slightly offset
+      if (this.cloudsMesh) {
+        this.cloudsMesh.rotation.y += 0.0018;
+      }
+
+      // Responsive positioning of globe on smaller screens
+      const isMobile = window.innerWidth <= 900;
+      const targetGlobeX = isMobile ? 0.0 : 3.2;
+      const targetGlobeY = isMobile ? -1.8 : 0.0;
+      const targetGlobeZ = isMobile ? 1.0 : 1.5;
+      this.globeGroup.position.lerp(new THREE.Vector3(targetGlobeX, targetGlobeY, targetGlobeZ), 0.05);
 
       // Animate pulsing beacon rings
       if (this.hubPins) {
