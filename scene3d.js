@@ -539,15 +539,6 @@ class HydroScene {
         this.arcBeams.push({ curve, pulse: pulseMesh, progress: Math.random() });
       }
     });
-          color: 0xffffff,
-          blending: THREE.AdditiveBlending
-        });
-        const pulseMesh = new THREE.Mesh(pulseGeo, pulseMat);
-        this.globeGroup.add(pulseMesh);
-
-        this.arcBeams.push({ curve, pulse: pulseMesh, progress: Math.random() });
-      }
-    });
 
     this.scene.add(this.globeGroup);
   }
