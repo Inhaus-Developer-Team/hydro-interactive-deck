@@ -840,19 +840,35 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }, { passive: true });
 
-  // Touch Swipe for Mobile / Touch screens
+  // Touch Swipe for Mobile / Touch screens (Intelligent Horizontal & Vertical Navigation)
   let touchStartX = 0;
+  let touchStartY = 0;
+  let touchStartTime = 0;
+
   window.addEventListener("touchstart", (e) => {
-    touchStartX = e.touches[0].clientX;
+    if (e.touches && e.touches[0]) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchStartTime = Date.now();
+    }
   }, { passive: true });
 
   window.addEventListener("touchend", (e) => {
-    if (isDetailOpen) return;
-    const touchEndX = e.changedTouches[0].clientX;
-    const diff = touchStartX - touchEndX;
-    if (Math.abs(diff) > 50) {
-      if (diff > 0) updateSlide(currentSlide + 1);
-      else updateSlide(currentSlide - 1);
+    if (isDetailOpen || isGridOpen || isHelpOpen) return;
+    if (scene && scene.isDraggingGlobe) return; // Do not trigger slide jump while user is rotating 3D globe
+
+    if (e.changedTouches && e.changedTouches[0]) {
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+      const diffX = touchStartX - touchEndX;
+      const diffY = touchStartY - touchEndY;
+      const timeElapsed = Date.now() - touchStartTime;
+
+      // Allow quick horizontal swipe (or clear vertical swipe if not inside scrollable content)
+      if (Math.abs(diffX) > 45 && Math.abs(diffX) > Math.abs(diffY) && timeElapsed < 600) {
+        if (diffX > 0) updateSlide(currentSlide + 1);
+        else updateSlide(currentSlide - 1);
+      }
     }
   }, { passive: true });
 
