@@ -844,12 +844,12 @@ class HydroScene {
         this.cloudsMesh.rotation.y += 0.0012;
       }
 
-      // Responsive positioning of globe on smaller screens
+      // Responsive positioning of globe on right-hand showcase stage
       const isMobile = window.innerWidth <= 900;
-      const targetGlobeX = isMobile ? 0.0 : 3.2;
-      const targetGlobeY = isMobile ? -1.8 : 0.0;
-      const targetGlobeZ = isMobile ? 1.0 : 1.5;
-      this.globeGroup.position.lerp(new THREE.Vector3(targetGlobeX, targetGlobeY, targetGlobeZ), 0.05);
+      const targetGlobeX = isMobile ? 0.0 : 3.85;
+      const targetGlobeY = isMobile ? -2.2 : 0.0;
+      const targetGlobeZ = isMobile ? 0.6 : 1.2;
+      this.globeGroup.position.lerp(new THREE.Vector3(targetGlobeX, targetGlobeY, targetGlobeZ), 0.06);
 
       // Animate pulsing beacon rings
       if (this.hubPins) {
