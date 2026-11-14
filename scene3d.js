@@ -1,5 +1,463 @@
-// Three.js 3D Multi-Layered Aquatic Engine
-// Combines Background Caustics, Volumetric Water Surface, Floating Droplets, and Foreground Fluid Ribbons
+// Three.js 3D Multi-Layered Aquatic Engine + HTML-in-Canvas Multi-Layer Compositor
+// Combines Calm WebGL Depth, Photorealistic Earth Globe, and 4-Layer Canvas Compositing
+
+class HydroCanvasCompositor {
+  constructor(canvasId = "compositing-canvas") {
+    this.canvas = document.getElementById(canvasId);
+    if (!this.canvas) return;
+
+    this.ctx = this.canvas.getContext("2d");
+    this.hasHtmlInCanvas = ("content" in HTMLCanvasElement.prototype);
+
+    // Offscreen compositing buffer for Layer 0 (source-atop glyph masking)
+    this.layerBuffer = document.createElement("canvas");
+    this.layerBufferCtx = this.layerBuffer.getContext("2d");
+
+    this.width = window.innerWidth;
+    this.height = window.innerHeight;
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    this.activeSlideIndex = 0;
+    this.bgWord = "HYDRO";
+    this.chapterMeta = "00 / COMPANY OVERVIEW";
+    this.totalSlides = 13;
+
+    // Transition animation state (Layer 3)
+    this.transitionActive = false;
+    this.transitionStart = 0;
+    this.transitionDuration = 650;
+    this.transitionDirection = 1;
+    this.outgoingWord = "HYDRO";
+
+    // Cached bounding rectangles of foreground/middleground interactive cards (Layer 2)
+    this.cachedElements = [];
+    this.lastCacheSlide = -1;
+    this.lastCacheTime = 0;
+
+    // Direct HTML-in-Canvas [drawable] children
+    this.drawableChildren = Array.from(this.canvas.querySelectorAll("[drawable]"));
+    this.wordSpan = document.getElementById("drawable-monumental-word");
+    this.metaSpan = document.getElementById("drawable-chapter-tag");
+    this.counterSpan = document.getElementById("drawable-slide-counter");
+
+    document.body.classList.add("canvas-compositing-active");
+
+    // Initialize ResizeObserver strictly OUTSIDE onpaint to avoid memory leaks
+    this.initResizeObserver();
+
+    if (this.hasHtmlInCanvas) {
+      this.canvas.onpaint = (event) => {
+        this.paintHtmlInCanvas(event);
+      };
+      this.requestRender();
+    }
+
+    // Recache active card geometry when a slide scrolls
+    document.addEventListener("scroll", () => this.invalidateElementCache(), true);
+  }
+
+  /**
+   * Static helper demonstrating WebGL2 HTML-in-Canvas texture upload path.
+   */
+  static syncWebGLDrawableTexture(gl, canvas, element, texture) {
+    if (!gl || !canvas || !element || typeof canvas.captureElementImage !== "function") return;
+    const capture = canvas.captureElementImage(element);
+    if (!capture) return;
+
+    const width = Math.max(1, Math.ceil(capture.width));
+    const height = Math.max(1, Math.ceil(capture.height));
+
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    if (typeof gl.texElementSubImage2D === "function") {
+      gl.texElementSubImage2D(gl.TEXTURE_2D, 0, 0, 0, element, { width, height });
+    }
+  }
+
+  initResizeObserver() {
+    if (typeof ResizeObserver === "undefined" || !this.canvas) {
+      this.syncCanvasDimensions(window.innerWidth, window.innerHeight);
+      return;
+    }
+
+    this.resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        let pixelWidth;
+        let pixelHeight;
+        if (entry.devicePixelContentBoxSize && entry.devicePixelContentBoxSize.length > 0) {
+          pixelWidth = entry.devicePixelContentBoxSize[0].inlineSize;
+          pixelHeight = entry.devicePixelContentBoxSize[0].blockSize;
+          this.dpr = pixelWidth / Math.max(1, entry.contentRect.width);
+        } else {
+          this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+          pixelWidth = Math.round(entry.contentRect.width * this.dpr);
+          pixelHeight = Math.round(entry.contentRect.height * this.dpr);
+        }
+        this.syncCanvasDimensions(entry.contentRect.width, entry.contentRect.height, pixelWidth, pixelHeight);
+        this.invalidateElementCache();
+        this.requestRender();
+      }
+    });
+
+    try {
+      this.resizeObserver.observe(this.canvas, { box: "device-pixel-content-box" });
+    } catch (e) {
+      this.resizeObserver.observe(this.canvas);
+    }
+  }
+
+  syncCanvasDimensions(cssWidth, cssHeight, pixelWidth, pixelHeight) {
+    this.width = Math.max(1, cssWidth || window.innerWidth);
+    this.height = Math.max(1, cssHeight || window.innerHeight);
+    const targetW = Math.max(1, pixelWidth || Math.round(this.width * this.dpr));
+    const targetH = Math.max(1, pixelHeight || Math.round(this.height * this.dpr));
+
+    if (this.canvas.width !== targetW || this.canvas.height !== targetH) {
+      this.canvas.width = targetW;
+      this.canvas.height = targetH;
+      this.layerBuffer.width = targetW;
+      this.layerBuffer.height = targetH;
+    }
+  }
+
+  requestRender() {
+    if (this.hasHtmlInCanvas && typeof this.canvas.requestPaint === "function") {
+      this.canvas.requestPaint();
+    }
+  }
+
+  setSlideMetadata(slideIndex, totalSlides, bgWord, chapterMeta) {
+    this.activeSlideIndex = slideIndex;
+    this.totalSlides = totalSlides || 13;
+    this.bgWord = (bgWord || "HYDRO").toUpperCase();
+    this.chapterMeta = (chapterMeta || "COMPANY OVERVIEW").toUpperCase();
+
+    if (this.wordSpan) this.wordSpan.textContent = this.bgWord;
+    if (this.metaSpan) this.metaSpan.textContent = this.chapterMeta;
+    if (this.counterSpan) {
+      this.counterSpan.textContent = `${String(slideIndex + 1).padStart(2, "0")} / ${String(this.totalSlides).padStart(2, "0")}`;
+    }
+
+    this.invalidateElementCache();
+    this.requestRender();
+  }
+
+  triggerTransition(fromIdx, toIdx, direction, prevWord) {
+    this.outgoingWord = (prevWord || this.bgWord || "HYDRO").toUpperCase();
+    this.transitionDirection = direction >= 0 ? 1 : -1;
+    this.transitionStart = performance.now();
+    this.transitionActive = true;
+    this.invalidateElementCache();
+    this.requestRender();
+  }
+
+  invalidateElementCache() {
+    this.lastCacheSlide = -1;
+  }
+
+  refreshElementCache(nowMs) {
+    const activeSlide = document.querySelector(".slide.active");
+    if (!activeSlide) {
+      this.cachedElements = [];
+      return;
+    }
+    const selectors = ".middleground-card, .glass-card, .visual-frame, .table-wrapper, .hub-list-card, .comparison-container";
+    const nodes = activeSlide.querySelectorAll(selectors);
+    const rects = [];
+    nodes.forEach((el, idx) => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 20 && rect.height > 20 && rect.bottom > 0 && rect.top < this.height) {
+        rects.push({
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          depthFactor: 0.75 + (idx % 3) * 0.25
+        });
+      }
+    });
+    this.cachedElements = rects;
+    this.lastCacheSlide = this.activeSlideIndex;
+    this.lastCacheTime = nowMs;
+  }
+
+  updateFrameInputs(time, mouse, slideIndex) {
+    this._lastTime = time;
+    this._lastMouse = mouse;
+    this.activeSlideIndex = slideIndex;
+  }
+
+  paintHtmlInCanvas() {
+    if (!this.ctx || !this.hasHtmlInCanvas) return;
+
+    this.renderCompositeFrame(this._lastTime || 0, this._lastMouse || { x: 0, y: 0 }, this.activeSlideIndex);
+
+    // Composite [drawable] DOM elements natively when browser supports drawElementImage
+    if (typeof this.ctx.drawElementImage === "function") {
+      const offsets = [
+        { x: -32 * ((this._lastMouse && this._lastMouse.x) || 0), y: 20 * ((this._lastMouse && this._lastMouse.y) || 0) },
+        { x: 14 * ((this._lastMouse && this._lastMouse.x) || 0), y: -10 * ((this._lastMouse && this._lastMouse.y) || 0) },
+        { x: 6 * ((this._lastMouse && this._lastMouse.x) || 0), y: -4 * ((this._lastMouse && this._lastMouse.y) || 0) }
+      ];
+
+      this.drawableChildren.forEach((el, idx) => {
+        const off = offsets[idx] || { x: 0, y: 0 };
+        this.ctx.save();
+        this.ctx.globalAlpha = idx === 0 ? 0.04 : 0.0;
+        const drawX = Math.round(this.width * 0.05 + off.x);
+        const drawY = Math.round(this.height * 0.12 + off.y);
+        try {
+          this.ctx.drawElementImage(el, drawX, drawY);
+          if (typeof this.canvas.updateElementGeometry === "function") {
+            const matrix = new DOMMatrix().translate(drawX, drawY);
+            this.canvas.updateElementGeometry(el, { canvasTransform: matrix });
+          }
+        } catch (e) {}
+        this.ctx.restore();
+      });
+    }
+  }
+
+  renderCompositeFrame(time, mouse, slideIndex) {
+    if (!this.ctx || !this.canvas) return;
+    this._lastTime = time;
+    this._lastMouse = mouse;
+
+    const nowMs = performance.now();
+    const mx = mouse ? mouse.x : 0;
+    const my = mouse ? mouse.y : 0;
+
+    // Refresh active slide card geometry at most every 450ms or on slide change
+    if (this.lastCacheSlide !== slideIndex || nowMs - this.lastCacheTime > 450) {
+      this.refreshElementCache(nowMs);
+    }
+
+    // Update Layer 3 transition progress
+    let wipeProgress = 1;
+    if (this.transitionActive) {
+      const elapsed = nowMs - this.transitionStart;
+      const rawT = Math.min(1, Math.max(0, elapsed / this.transitionDuration));
+      wipeProgress = 1 - Math.pow(1 - rawT, 3); // Cubic ease-out
+      if (rawT >= 1) {
+        this.transitionActive = false;
+      }
+    }
+
+    const slideSlip = this.transitionActive ? (1 - wipeProgress) * 48 * this.transitionDirection : 0;
+
+    // Drive CSS custom properties for synchronized DOM depth parallax
+    const rootStyle = document.documentElement.style;
+    rootStyle.setProperty("--layer-bg-offset", `${(-38 * mx + slideSlip * 1.4).toFixed(2)}px`);
+    rootStyle.setProperty("--layer-mid-offset", `${(-16 * mx + slideSlip * 1.0).toFixed(2)}px`);
+    rootStyle.setProperty("--layer-fg-offset", `${(10 * mx + slideSlip * 0.7).toFixed(2)}px`);
+
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.scale(this.dpr, this.dpr);
+
+    // =========================================================================
+    // LAYER 0: Deep Architectural Watermark Pass (-0.38x Parallax + source-atop)
+    // =========================================================================
+    this.renderLayer0MonumentalWord(ctx, time, mx, my, slideSlip * 1.4, wipeProgress);
+
+    // =========================================================================
+    // LAYER 1: Precision Architectural Grid & Laminar Wave Horizon (-0.16x)
+    // =========================================================================
+    this.renderLayer1GridAndHorizon(ctx, time, mx, my, slideIndex, slideSlip * 1.0);
+
+    // =========================================================================
+    // LAYER 2: Element-Synced Specular Frames & Kinetic Echoes (+0.10x to +0.22x)
+    // =========================================================================
+    this.renderLayer2ElementFrames(ctx, time, mx, my, slideSlip * 0.7, wipeProgress);
+
+    // =========================================================================
+    // LAYER 3: Directional Liquid Wipe & Alpha Curtain Transition Pass
+    // =========================================================================
+    if (this.transitionActive && wipeProgress < 0.995) {
+      this.renderLayer3TransitionWipe(ctx, wipeProgress, time);
+    }
+
+    ctx.restore();
+  }
+
+  renderLayer0MonumentalWord(ctx, time, mx, my, offsetX, wipeProgress) {
+    const bCtx = this.layerBufferCtx;
+    if (!bCtx) return;
+
+    const w = this.width;
+    const h = this.height;
+    bCtx.save();
+    bCtx.setTransform(1, 0, 0, 1, 0, 0);
+    bCtx.clearRect(0, 0, this.layerBuffer.width, this.layerBuffer.height);
+    bCtx.scale(this.dpr, this.dpr);
+
+    const fontSize = Math.max(96, Math.min(290, w * 0.19));
+    bCtx.font = `700 ${fontSize}px Inter, -apple-system, BlinkMacSystemFont, sans-serif`;
+    bCtx.textAlign = "center";
+    bCtx.textBaseline = "middle";
+
+    const centerX = w * 0.52 - mx * 52 + offsetX;
+    const centerY = h * 0.51 + my * 28;
+
+    // Paint base silhouette of monumental word
+    bCtx.globalCompositeOperation = "source-over";
+    bCtx.fillStyle = "rgba(180, 218, 255, 0.9)";
+    bCtx.fillText(this.bgWord, centerX, centerY);
+
+    // Mask caustic luminance sweep strictly inside typography shapes ('source-atop')
+    bCtx.globalCompositeOperation = "source-atop";
+    const sweepPos = ((Math.sin(time * 0.45) * 0.5 + 0.5) * 0.8 + 0.1) * w;
+    const causticGrad = bCtx.createLinearGradient(sweepPos - w * 0.35, centerY - fontSize * 0.6, sweepPos + w * 0.35, centerY + fontSize * 0.6);
+    causticGrad.addColorStop(0.0, "rgba(15, 38, 74, 0.35)");
+    causticGrad.addColorStop(0.45, "rgba(0, 194, 255, 0.85)");
+    causticGrad.addColorStop(0.55, "rgba(244, 247, 250, 0.95)");
+    causticGrad.addColorStop(1.0, "rgba(15, 38, 74, 0.35)");
+    bCtx.fillStyle = causticGrad;
+    bCtx.fillRect(0, 0, w, h);
+    bCtx.restore();
+
+    // Composite Layer 0 onto main stage with subtle executive depth weight
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    ctx.globalAlpha = 0.065 * (0.45 + 0.55 * wipeProgress);
+    ctx.drawImage(this.layerBuffer, 0, 0, w, h);
+    ctx.restore();
+  }
+
+  renderLayer1GridAndHorizon(ctx, time, mx, my, slideIndex, offsetX) {
+    const w = this.width;
+    const h = this.height;
+    const gx = -mx * 18 + offsetX;
+    const gy = my * 10;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+
+    // Subtle 4-column executive architectural hairlines
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.028)";
+    ctx.lineWidth = 1;
+    const cols = w < 768 ? 2 : 4;
+    const padX = w < 768 ? 24 : 64;
+    const usableW = w - padX * 2;
+
+    for (let i = 0; i <= cols; i++) {
+      const xPos = Math.round(padX + (usableW / cols) * i + gx * 0.35) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(xPos, 64);
+      ctx.lineTo(xPos, h - 72);
+      ctx.stroke();
+
+      // Intersection fiducial '+' ticks
+      const tickY = Math.round(h * 0.24 + gy * 0.3) + 0.5;
+      ctx.strokeStyle = "rgba(0, 194, 255, 0.14)";
+      ctx.beginPath();
+      ctx.moveTo(xPos - 4, tickY);
+      ctx.lineTo(xPos + 4, tickY);
+      ctx.moveTo(xPos, tickY - 4);
+      ctx.lineTo(xPos, tickY + 4);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.028)";
+    }
+
+    // Calm Laminar Fluid Horizon Line (Tracks presentation depth 0 -> 12)
+    const progress = slideIndex / Math.max(1, this.totalSlides - 1);
+    const horizonBaseY = h * (0.82 - progress * 0.08) + gy * 0.4;
+    ctx.strokeStyle = "rgba(0, 194, 255, 0.16)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let x = 0; x <= w; x += 28) {
+      const normX = x / w;
+      const waveY = horizonBaseY +
+        Math.sin(normX * 4.2 + time * 0.65) * 6.5 +
+        Math.cos(normX * 7.5 - time * 0.42) * 3.0;
+      if (x === 0) ctx.moveTo(x, waveY);
+      else ctx.lineTo(x, waveY);
+    }
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  renderLayer2ElementFrames(ctx, time, mx, my, offsetX, wipeProgress) {
+    if (!this.cachedElements.length) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    this.cachedElements.forEach((box) => {
+      const shiftX = mx * 11 * box.depthFactor + offsetX * box.depthFactor;
+      const shiftY = -my * 8 * box.depthFactor;
+      const x = box.left + shiftX;
+      const y = box.top + shiftY;
+      const w = box.width;
+      const h = box.height;
+
+      // Subtle depth-separated hairline ghost plane
+      ctx.strokeStyle = `rgba(0, 194, 255, ${(0.075 * wipeProgress).toFixed(3)})`;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
+
+      // Precision L-shaped architectural corner ticks
+      const tick = 8;
+      ctx.strokeStyle = `rgba(176, 191, 212, ${(0.22 * wipeProgress).toFixed(3)})`;
+      ctx.beginPath();
+      // Top-left
+      ctx.moveTo(x - 3, y - 3 + tick);
+      ctx.lineTo(x - 3, y - 3);
+      ctx.lineTo(x - 3 + tick, y - 3);
+      // Bottom-right
+      ctx.moveTo(x + w + 3 - tick, y + h + 3);
+      ctx.lineTo(x + w + 3, y + h + 3);
+      ctx.lineTo(x + w + 3, y + h + 3 - tick);
+      ctx.stroke();
+    });
+
+    ctx.restore();
+  }
+
+  renderLayer3TransitionWipe(ctx, wipeProgress, time) {
+    const w = this.width;
+    const h = this.height;
+    const fadeOut = 1 - wipeProgress;
+
+    // 1. Directional outgoing watermark dissolve via destination-out mask
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-out";
+    const bandX = this.transitionDirection >= 0
+      ? w * (1 - wipeProgress * 1.15)
+      : w * (wipeProgress * 1.15 - 0.15);
+    const maskGrad = ctx.createLinearGradient(bandX - 180, 0, bandX + 180, 0);
+    maskGrad.addColorStop(0, "rgba(0, 0, 0, 0)");
+    maskGrad.addColorStop(0.5, `rgba(0, 0, 0, ${(0.45 * fadeOut).toFixed(3)})`);
+    maskGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = maskGrad;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+
+    // 2. Crisp specular caustic curtain sweep via screen blend
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    const curtainGrad = ctx.createLinearGradient(bandX - 140, 0, bandX + 140, 0);
+    curtainGrad.addColorStop(0, "rgba(0, 194, 255, 0)");
+    curtainGrad.addColorStop(0.5, `rgba(0, 194, 255, ${(0.18 * fadeOut).toFixed(3)})`);
+    curtainGrad.addColorStop(1, "rgba(0, 194, 255, 0)");
+    ctx.fillStyle = curtainGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Staggered outgoing ghost label trail
+    ctx.globalAlpha = 0.055 * fadeOut;
+    ctx.font = `700 ${Math.max(88, Math.min(260, w * 0.18))}px Inter, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#8fa3bd";
+    const ghostX = w * 0.5 - this.transitionDirection * wipeProgress * 160;
+    ctx.fillText(this.outgoingWord, ghostX, h * 0.5 + Math.sin(time * 2) * 4);
+    ctx.restore();
+  }
+}
+
 class HydroScene {
   constructor(canvasId) {
     this.canvas = document.getElementById(canvasId);
@@ -11,10 +469,15 @@ class HydroScene {
     // Interactive Drag / Orbit State for 3D Globe
     this.isDraggingGlobe = false;
     this.previousPointerPosition = { x: 0, y: 0 };
-    this.globeUserRotation = { x: 0.18, y: 0 };
+    this.globeUserRotation = { x: 0.22, y: -0.35 };
+    this.targetGlobeRotation = null;
+    this.focusedHubIndex = 0;
     this.globeVelocity = { x: 0, y: 0 };
     this.raycaster = new THREE.Raycaster();
     this.pointerNdc = new THREE.Vector2();
+
+    // Multi-Layer HTML-in-Canvas Compositor
+    this.compositor = new HydroCanvasCompositor("compositing-canvas");
 
     this.init();
     this.initWaterShader();
@@ -36,11 +499,11 @@ class HydroScene {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.08;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x020712);
-    this.scene.fog = new THREE.FogExp2(0x020712, 0.04);
+    this.scene.background = new THREE.Color(0x03070e);
+    this.scene.fog = new THREE.FogExp2(0x03070e, 0.045);
 
     this.camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 100);
     this.camera.position.set(0, 0, 10);
@@ -48,25 +511,25 @@ class HydroScene {
     this.targetCameraLookAt = new THREE.Vector3(0, 0, 0);
     this.currentLookAt = new THREE.Vector3(0, 0, 0);
 
-    // Aquatic Lighting Setup
-    const ambientLight = new THREE.AmbientLight(0x0a2245, 2.4);
+    // Balanced Executive Aquatic Lighting Setup
+    const ambientLight = new THREE.AmbientLight(0x0f2547, 2.2);
     this.scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0x00d2ff, 3.2);
+    const dirLight = new THREE.DirectionalLight(0xe0f7ff, 2.6);
     dirLight.position.set(6, 12, 8);
     this.scene.add(dirLight);
 
-    const cyanPoint = new THREE.PointLight(0x00ffff, 4.5, 35);
+    const cyanPoint = new THREE.PointLight(0x00c2ff, 2.8, 35);
     cyanPoint.position.set(-6, -2, 5);
     this.scene.add(cyanPoint);
 
-    const bluePoint = new THREE.PointLight(0x0055ff, 3.5, 25);
+    const bluePoint = new THREE.PointLight(0x1a6dff, 2.2, 25);
     bluePoint.position.set(5, -4, 3);
     this.scene.add(bluePoint);
   }
 
   initWaterShader() {
-    // Background Dynamic Simplex Caustic Plane
+    // Calm Deep Caustic Plane (Subdued contrast for executive readability)
     const vertexShader = `
       uniform float u_time;
       uniform vec2 u_mouse;
@@ -125,11 +588,11 @@ class HydroScene {
         vUv = uv;
         vec3 pos = position;
         
-        float wave1 = snoise(vec3(pos.x * 0.2, pos.y * 0.2, u_time * 0.28)) * 0.9;
-        float wave2 = snoise(vec3(pos.x * 0.45 + 4.0, pos.y * 0.45, u_time * 0.42)) * 0.45;
+        float wave1 = snoise(vec3(pos.x * 0.16, pos.y * 0.16, u_time * 0.2)) * 0.65;
+        float wave2 = snoise(vec3(pos.x * 0.35 + 4.0, pos.y * 0.35, u_time * 0.3)) * 0.32;
         
         float d = distance(pos.xy, u_mouse * 7.5);
-        float mouseWave = sin(d * 2.2 - u_time * 3.8) * exp(-d * 0.35) * 0.65;
+        float mouseWave = sin(d * 1.8 - u_time * 2.8) * exp(-d * 0.38) * 0.35;
 
         pos.z += wave1 + wave2 + mouseWave;
         vPosition = pos;
@@ -144,35 +607,34 @@ class HydroScene {
       varying vec3 vPosition;
 
       void main() {
-        vec3 deepAbyss = vec3(0.01, 0.04, 0.12);
-        vec3 oceanBlue = vec3(0.03, 0.18, 0.46);
-        vec3 causticCyan = vec3(0.0, 0.85, 1.0);
-        vec3 causticHighlight = vec3(0.85, 0.97, 1.0);
+        vec3 deepAbyss = vec3(0.012, 0.027, 0.055);
+        vec3 oceanBlue = vec3(0.027, 0.067, 0.145);
+        vec3 causticCyan = vec3(0.0, 0.72, 0.94);
+        vec3 causticHighlight = vec3(0.76, 0.92, 1.0);
 
-        // Multi-frequency caustic calculation
-        vec2 p = vUv * 9.0;
+        vec2 p = vUv * 7.5;
         float c = 1.0;
         for (int i = 0; i < 4; i++) {
           p += vec2(
-            cos(p.y + u_time * 0.35 + float(i) * 1.4),
-            sin(p.x + u_time * 0.35 + float(i) * 1.4)
+            cos(p.y + u_time * 0.25 + float(i) * 1.4),
+            sin(p.x + u_time * 0.25 + float(i) * 1.4)
           );
           c += 1.0 / length(vec2(
-            sin(p.x) / sin(p.y + u_time * 0.18),
-            cos(p.y) / cos(p.x + u_time * 0.18)
+            sin(p.x) / sin(p.y + u_time * 0.14),
+            cos(p.y) / cos(p.x + u_time * 0.14)
           ));
         }
-        c = clamp(pow(c * 0.08, 2.4), 0.0, 1.6);
+        c = clamp(pow(c * 0.075, 2.2), 0.0, 1.2);
 
-        float heightFactor = clamp((vPosition.z + 1.2) * 0.45, 0.0, 1.0);
+        float heightFactor = clamp((vPosition.z + 1.0) * 0.42, 0.0, 1.0);
         vec3 color = mix(deepAbyss, oceanBlue, heightFactor);
-        color = mix(color, causticCyan, c * 0.62);
-        color += causticHighlight * (c * 0.42);
+        color = mix(color, causticCyan, c * 0.28);
+        color += causticHighlight * (c * 0.16);
 
         float dist = distance(vUv, vec2(0.5, 0.5));
-        color *= smoothstep(0.98, 0.22, dist);
+        color *= smoothstep(0.95, 0.2, dist);
 
-        gl_FragColor = vec4(color, 0.94);
+        gl_FragColor = vec4(color, 0.38);
       }
     `;
 
@@ -181,7 +643,7 @@ class HydroScene {
       u_mouse: { value: new THREE.Vector2(0, 0) }
     };
 
-    const geometry = new THREE.PlaneGeometry(42, 28, 140, 140);
+    const geometry = new THREE.PlaneGeometry(42, 28, 120, 120);
     const material = new THREE.ShaderMaterial({
       vertexShader: vertexShader,
       fragmentShader: fragmentShader,
@@ -191,13 +653,12 @@ class HydroScene {
     });
 
     this.waterMesh = new THREE.Mesh(geometry, material);
-    this.waterMesh.position.set(0, 0, -3);
+    this.waterMesh.position.set(0, 0, -3.5);
     this.scene.add(this.waterMesh);
   }
 
   initFloatingWaterSurface() {
-    // Middleground Floating Fluid Plane (Horizontal Water Plane at y = -2.2)
-    // Giving visual depth beneath monumental typography
+    // Subdued Horizon Water Plane
     const meshGeo = new THREE.PlaneGeometry(36, 18, 64, 48);
     meshGeo.rotateX(-Math.PI / 2.3);
 
@@ -210,8 +671,8 @@ class HydroScene {
         void main() {
           vUv = uv;
           vec3 pos = position;
-          float wave = sin(pos.x * 0.5 + u_time * 1.2) * cos(pos.y * 0.4 + u_time * 0.9) * 0.35;
-          wave += sin(pos.x * 1.2 - u_time * 1.8) * 0.12;
+          float wave = sin(pos.x * 0.45 + u_time * 0.9) * cos(pos.y * 0.35 + u_time * 0.7) * 0.18;
+          wave += sin(pos.x * 1.1 - u_time * 1.3) * 0.06;
           pos.z += wave;
           vElevation = wave;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
@@ -223,21 +684,20 @@ class HydroScene {
         varying float vElevation;
 
         void main() {
-          vec3 shallow = vec3(0.0, 0.65, 0.95);
-          vec3 deep = vec3(0.01, 0.08, 0.25);
-          vec3 crest = vec3(0.7, 0.95, 1.0);
+          vec3 shallow = vec3(0.0, 0.55, 0.85);
+          vec3 deep = vec3(0.012, 0.04, 0.12);
+          vec3 crest = vec3(0.6, 0.88, 0.98);
 
-          float mixFactor = smoothstep(-0.3, 0.35, vElevation);
+          float mixFactor = smoothstep(-0.2, 0.22, vElevation);
           vec3 col = mix(deep, shallow, mixFactor);
-          if (vElevation > 0.25) {
-            col = mix(col, crest, (vElevation - 0.25) * 4.0);
+          if (vElevation > 0.14) {
+            col = mix(col, crest, (vElevation - 0.14) * 3.0);
           }
 
-          // Edge fade
-          float alpha = smoothstep(0.0, 0.15, vUv.x) * smoothstep(1.0, 0.85, vUv.x) *
-                        smoothstep(0.0, 0.15, vUv.y) * smoothstep(1.0, 0.85, vUv.y);
+          float alpha = smoothstep(0.0, 0.18, vUv.x) * smoothstep(1.0, 0.82, vUv.x) *
+                        smoothstep(0.0, 0.18, vUv.y) * smoothstep(1.0, 0.82, vUv.y);
 
-          gl_FragColor = vec4(col, alpha * 0.45);
+          gl_FragColor = vec4(col, alpha * 0.18);
         }
       `
     };
@@ -253,39 +713,36 @@ class HydroScene {
     });
 
     this.surfaceMesh = new THREE.Mesh(meshGeo, surfaceMat);
-    this.surfaceMesh.position.set(0, -2.5, 0);
+    this.surfaceMesh.position.set(0, -2.6, 0);
     this.scene.add(this.surfaceMesh);
   }
 
   initBubbleParticles() {
-    // Foreground & Middleground 3D Water Droplets / Bubbles
-    const count = 350;
+    // Restrained Ambient Depth Dust (95 fine particles, zero clutter)
+    const count = 95;
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const speeds = new Float32Array(count);
-    const sizes = new Float32Array(count);
 
     for (let i = 0; i < count; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 32;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * 22;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 14 + 1.5; // Spread around camera and cards
-      speeds[i] = Math.random() * 0.015 + 0.006;
-      sizes[i] = Math.random() * 0.22 + 0.08;
+      positions[i * 3] = (Math.random() - 0.5) * 30;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 20;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 12 + 1.0;
+      speeds[i] = Math.random() * 0.008 + 0.003;
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
-    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
     const loader = new THREE.TextureLoader();
     const dropletTexture = loader.load('assets/images/water_droplet.png');
 
     const pMaterial = new THREE.PointsMaterial({
-      color: 0x90e0ef,
-      size: 0.35,
+      color: 0xb0bfd4,
+      size: 0.12,
       map: dropletTexture,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.26,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
@@ -296,52 +753,48 @@ class HydroScene {
   }
 
   initGlobalPresenceGlobe() {
-    // 3D Photorealistic Interactive Earth Globe for Slide 10 (Global Presence)
+    // 3D Photorealistic Interactive Earth Globe for Slide 10 (Group Structure)
     this.globeGroup = new THREE.Group();
-    // Default position (adjusted responsively in updateCameraForSlide)
+    this.globeGroup.rotation.order = "YXZ";
     this.globeGroup.position.set(3.2, 0, 1.5);
     this.globeGroup.scale.set(0, 0, 0);
 
     const radius = 2.25;
 
-    // 1. Authentic NASA Blue Marble Photorealistic Earth Mesh
+    // 1. NASA Blue Marble Photorealistic Earth Surface
     const textureLoader = new THREE.TextureLoader();
     const earthTexture = textureLoader.load('assets/images/earth_surface_realistic.jpg');
     earthTexture.colorSpace = THREE.SRGBColorSpace;
     earthTexture.wrapS = THREE.RepeatWrapping;
     earthTexture.wrapT = THREE.ClampToEdgeWrapping;
 
-    // Specular ocean map for realistic sun gleam on water vs matte continents
     const specularTexture = textureLoader.load('assets/images/earth_specular.jpg');
 
     const earthGeo = new THREE.SphereGeometry(radius, 64, 64);
-    // Note: No arbitrary rotateY, so UV u=0.5 directly matches prime meridian (Lon 0)
-
     const earthMat = new THREE.MeshPhongMaterial({
       map: earthTexture,
       specularMap: specularTexture,
-      specular: new THREE.Color(0x226688),
-      shininess: 25,
-      bumpScale: 0.05
+      specular: new THREE.Color(0x1f5578),
+      shininess: 22
     });
     this.earthMesh = new THREE.Mesh(earthGeo, earthMat);
     this.globeGroup.add(this.earthMesh);
 
-    // 2. Translucent Dynamic Cloud Layer (Subtle, sheer whisps allowing continents to stay crisp)
+    // 2. Sheer Translucent Cloud Whisps
     const cloudsTexture = textureLoader.load('assets/images/earth_clouds.jpg');
-    const cloudsGeo = new THREE.SphereGeometry(radius * 1.012, 48, 48);
+    const cloudsGeo = new THREE.SphereGeometry(radius * 1.01, 48, 48);
     const cloudsMat = new THREE.MeshStandardMaterial({
       alphaMap: cloudsTexture,
       transparent: true,
-      opacity: 0.16, // Sheer, delicate whisps so continents, borders and cities remain completely vivid
+      opacity: 0.14,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
     this.cloudsMesh = new THREE.Mesh(cloudsGeo, cloudsMat);
     this.globeGroup.add(this.cloudsMesh);
 
-    // 3. Atmospheric Rayleigh Scattering Fresnel Shell
-    const atmoGeo = new THREE.SphereGeometry(radius * 1.055, 48, 48);
+    // 3. Restrained Rayleigh Atmospheric Limbshell (No thick cartoon ring)
+    const atmoGeo = new THREE.SphereGeometry(radius * 1.045, 48, 48);
     const atmoShader = {
       vertexShader: `
         varying vec3 vNormal;
@@ -357,9 +810,8 @@ class HydroScene {
         varying vec3 vPosition;
         void main() {
           vec3 viewDir = normalize(-vPosition);
-          float fresnel = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 3.4);
-          vec3 atmoColor = vec3(0.05, 0.72, 1.0);
-          gl_FragColor = vec4(atmoColor, fresnel * 0.85);
+          float fresnel = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 4.2);
+          gl_FragColor = vec4(vec3(0.15, 0.65, 0.98), fresnel * 0.42);
         }
       `
     };
@@ -375,10 +827,7 @@ class HydroScene {
     this.atmoMesh = new THREE.Mesh(atmoGeo, atmoMat);
     this.globeGroup.add(this.atmoMesh);
 
-    // 4. Exact Geographic Coordinates Conversion for Three.js UV Spherical Coordinates:
-    // Equirectangular mapping in Three.js:
-    // phi: 0 at North Pole (+90 lat) to PI at South Pole (-90 lat)
-    // theta: longitude in radians mapped with offset so Prime Meridian (lon 0) aligns with vertex normal
+    // Exact Geographic Coordinates Conversion for Three.js SphereGeometry UV mapping
     const latLongToVector3 = (lat, lon, r) => {
       const phi = (90 - lat) * (Math.PI / 180);
       const theta = (lon + 180) * (Math.PI / 180);
@@ -389,80 +838,125 @@ class HydroScene {
       );
     };
 
-    // Real verified operating cities and official subsidiaries of Hydro Industries:
+    // Active verified Hydro Industries Group operating locations (index 0-5 matches index.html)
     const hubs = [
-      { name: "UK Global HQ", city: "Llangennech / London", country: "United Kingdom", lat: 51.5074, lon: -0.1278, isHQ: true },
-      { name: "Hydro Ecuador", city: "Quito", country: "Ecuador", lat: -0.1807, lon: -78.4678, isHQ: false },
-      { name: "Hydro Colombia", city: "Bogotá", country: "Colombia", lat: 4.7110, lon: -74.0721, isHQ: false },
-      { name: "Hydro Saudi Arabia", city: "Riyadh", country: "Saudi Arabia", lat: 24.7136, lon: 46.6753, isHQ: false },
-      { name: "Hydro Egypt", city: "Cairo", country: "Egypt", lat: 30.0444, lon: 31.2357, isHQ: false },
-      { name: "Hydro Regional Operations", city: "Manama", country: "Bahrain", lat: 26.2285, lon: 50.5860, isJV: true }
+      {
+        name: "UK Global HQ",
+        city: "Llangennech / London",
+        country: "United Kingdom",
+        lat: 51.5074,
+        lon: -0.1278,
+        isHQ: true,
+        radial: 1.22,
+        offset: [0.0, 0.28, 0.0]
+      },
+      {
+        name: "Hydro Ecuador",
+        city: "Quito",
+        country: "Ecuador",
+        lat: -0.1807,
+        lon: -78.4678,
+        isHQ: false,
+        radial: 1.24,
+        offset: [-0.38, -0.30, 0.15]
+      },
+      {
+        name: "Hydro Colombia",
+        city: "Bogotá",
+        country: "Colombia",
+        lat: 4.7110,
+        lon: -74.0721,
+        isHQ: false,
+        radial: 1.24,
+        offset: [-0.35, 0.30, 0.15]
+      },
+      {
+        name: "Hydro Saudi Arabia",
+        city: "Riyadh",
+        country: "Saudi Arabia",
+        lat: 24.7136,
+        lon: 46.6753,
+        isHQ: false,
+        radial: 1.24,
+        offset: [0.38, -0.34, 0.12]
+      },
+      {
+        name: "Hydro Egypt",
+        city: "Cairo",
+        country: "Egypt",
+        lat: 30.0444,
+        lon: 31.2357,
+        isHQ: false,
+        radial: 1.22,
+        offset: [-0.32, 0.34, 0.10]
+      },
+      {
+        name: "Hydro Regional Operations",
+        city: "Manama",
+        country: "Bahrain",
+        lat: 26.2285,
+        lon: 50.5860,
+        isJV: true,
+        radial: 1.30,
+        offset: [0.48, 0.22, -0.15]
+      }
     ];
 
     const hqPos = latLongToVector3(51.5074, -0.1278, radius);
     this.hubPins = [];
     this.arcBeams = [];
 
-    // Helper: Canvas Text Sprite Generator for 3D City Labels (Sci-fi HUD Data Tag Design)
+    // Minimalist Executive Callout Pill Generator
     const createCitySprite = (hub) => {
       const canvas = document.createElement('canvas');
-      canvas.width = 440;
-      canvas.height = 140;
+      canvas.width = 420;
+      canvas.height = 104;
       const ctx = canvas.getContext('2d');
 
       const isHQ = hub.isHQ;
       const isJV = hub.isJV;
-      const accentColor = isHQ ? '#ffffff' : (isJV ? '#ffd166' : '#00f0ff');
-      const tagBg = isHQ ? 'rgba(0, 40, 95, 0.95)' : 'rgba(2, 12, 32, 0.92)';
+      const accentColor = isHQ ? '#f4f7fa' : (isJV ? '#ffd166' : '#00c2ff');
 
-      // 1. Futuristic Glass HUD Tag Body with Corner Chamfer
-      const x = 14, y = 14, w = 412, h = 112, chamfer = 14;
+      // Clean rounded architectural pill
+      const x = 6, y = 6, w = 408, h = 92, r = 8;
       ctx.beginPath();
-      ctx.moveTo(x + chamfer, y);
-      ctx.lineTo(x + w, y);
-      ctx.lineTo(x + w, y + h - chamfer);
-      ctx.lineTo(x + w - chamfer, y + h);
-      ctx.lineTo(x, y + h);
-      ctx.lineTo(x, y + chamfer);
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
       ctx.closePath();
 
-      ctx.fillStyle = tagBg;
+      ctx.fillStyle = 'rgba(4, 11, 24, 0.88)';
+      ctx.fill();
+      ctx.strokeStyle = isHQ ? 'rgba(244, 247, 250, 0.45)' : (isJV ? 'rgba(255, 209, 102, 0.5)' : 'rgba(0, 194, 255, 0.42)');
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Status indicator dot
+      ctx.beginPath();
+      ctx.arc(x + 22, y + 30, 5, 0, Math.PI * 2);
+      ctx.fillStyle = accentColor;
       ctx.fill();
 
-      // Border with Accent Color Glow
-      ctx.strokeStyle = accentColor;
-      ctx.lineWidth = isHQ ? 3.5 : 2.5;
-      ctx.stroke();
-
-      // 2. Corner Bracket Detail (High-Tech Engineering Aesthetic)
-      ctx.strokeStyle = isHQ ? '#ffd166' : '#ffffff';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(x, y + 26);
-      ctx.lineTo(x, y + chamfer);
-      ctx.lineTo(x + chamfer, y);
-      ctx.lineTo(x + 26, y);
-      ctx.stroke();
-
-      // 3. Category / Status Header
-      ctx.font = '700 16px "JetBrains Mono", monospace';
-      ctx.fillStyle = isHQ ? '#ffd166' : (isJV ? '#ffd166' : '#00d2ff');
+      // City Name
+      ctx.font = '600 26px "Inter", "Segoe UI", sans-serif';
+      ctx.fillStyle = '#f4f7fa';
       ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      const statusText = isHQ ? '★ GLOBAL HEADQUARTERS' : (isJV ? 'REGIONAL JV OFFICE' : 'WHOLLY OWNED SUBSIDIARY');
-      ctx.fillText(statusText, x + 24, y + 20);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(hub.city, x + 38, y + 31);
 
-      // 4. Primary City Name (Large, crisp, high contrast)
-      ctx.font = '800 32px "Inter", "Segoe UI", sans-serif';
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(hub.city.toUpperCase(), x + 24, y + 46);
-
-      // 5. Geographic Coordinate & Country Tagline
-      ctx.font = '500 16px "JetBrains Mono", monospace';
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+      // Role / Country & Coordinates
+      ctx.font = '500 13px "JetBrains Mono", monospace';
+      ctx.fillStyle = accentColor;
+      const roleLabel = isHQ ? 'GLOBAL HQ' : (isJV ? 'JV OFFICE' : 'SUBSIDIARY');
       const latStr = `${Math.abs(hub.lat).toFixed(1)}°${hub.lat >= 0 ? 'N' : 'S'}`;
       const lonStr = `${Math.abs(hub.lon).toFixed(1)}°${hub.lon >= 0 ? 'E' : 'W'}`;
-      ctx.fillText(`${hub.country.toUpperCase()}  •  ${latStr}, ${lonStr}`, x + 24, y + 84);
+      ctx.fillText(`${roleLabel}  ·  ${hub.country.toUpperCase()}  ·  ${latStr}, ${lonStr}`, x + 22, y + 66);
 
       const texture = new THREE.CanvasTexture(canvas);
       texture.minFilter = THREE.LinearFilter;
@@ -472,96 +966,89 @@ class HydroScene {
         depthWrite: false
       });
       const sprite = new THREE.Sprite(spriteMat);
-      sprite.scale.set(1.25, 0.40, 1);
+      sprite.scale.set(1.16, 0.29, 1);
       return sprite;
     };
 
-    // Staggered Radial Heights for Labels to Prevent Overlap:
-    // Cairo & Riyadh & Manama are geographically clustered in the Middle East.
-    // Staggering their radial heights (1.20, 1.40, 1.62) completely eliminates 2D screen stacking.
-    const labelAltitudeMap = {
-      "UK Global HQ": 1.28,
-      "Hydro Ecuador": 1.24,
-      "Hydro Colombia": 1.48,
-      "Hydro Egypt": 1.22,
-      "Hydro Saudi Arabia": 1.46,
-      "Hydro Regional Operations": 1.68
-    };
-
-    // Generate Pins, Stems, Pulsing Beacons, Text Sprites & Arcs
-    hubs.forEach(hub => {
+    hubs.forEach((hub, idx) => {
       const pos = latLongToVector3(hub.lat, hub.lon, radius);
 
-      // Pin Color Palette: High Contrast vs Earth Blue/Green
-      const pinColor = hub.isHQ ? 0xffffff : (hub.isJV ? 0xffd166 : 0x00f0ff);
-      const ringColor = hub.isHQ ? 0x00e5ff : (hub.isJV ? 0xffaa00 : 0x00ffff);
+      const pinColor = hub.isHQ ? 0xf4f7fa : (hub.isJV ? 0xffd166 : 0x00c2ff);
+      const ringColor = hub.isHQ ? 0x00c2ff : (hub.isJV ? 0xffd166 : 0x00c2ff);
 
-      // Elevated Pin Head
-      const pinGeo = new THREE.SphereGeometry(hub.isHQ ? 0.095 : 0.065, 18, 18);
+      // Surface Pin Node
+      const pinGeo = new THREE.SphereGeometry(hub.isHQ ? 0.08 : 0.055, 16, 16);
       const pinMat = new THREE.MeshBasicMaterial({ color: pinColor });
       const pinMesh = new THREE.Mesh(pinGeo, pinMat);
-      pinMesh.position.copy(pos.clone().multiplyScalar(1.022));
+      pinMesh.position.copy(pos.clone().multiplyScalar(1.018));
       this.globeGroup.add(pinMesh);
 
-      // High-Tech Stalk / Beacon Stem extending from globe surface directly to label height
-      const labelAltitude = labelAltitudeMap[hub.name] || 1.30;
-      const labelPos = pos.clone().multiplyScalar(labelAltitude);
+      // 2-Segment Architectural Leader Line (surface -> radial elbow -> fanned label)
+      const elbowPos = pos.clone().multiplyScalar(hub.radial);
+      const labelPos = elbowPos.clone().add(new THREE.Vector3(hub.offset[0], hub.offset[1], hub.offset[2]));
 
-      const stemPoints = [pos, labelPos];
-      const stemGeo = new THREE.BufferGeometry().setFromPoints(stemPoints);
+      const stemGeo = new THREE.BufferGeometry().setFromPoints([pos, elbowPos, labelPos]);
       const stemMat = new THREE.LineBasicMaterial({
         color: ringColor,
         transparent: true,
-        opacity: 0.65,
-        linewidth: 2
+        opacity: 0.55
       });
-      this.globeGroup.add(new THREE.Line(stemGeo, stemMat));
+      const stemLine = new THREE.Line(stemGeo, stemMat);
+      this.globeGroup.add(stemLine);
 
-      // Radial Glowing Pulse Ring at Ground Contact
-      const ringGeo = new THREE.RingGeometry(0.07, 0.14, 28);
+      // Radial Beacon Ring on Surface
+      const ringGeo = new THREE.RingGeometry(0.06, 0.115, 28);
       const ringMat = new THREE.MeshBasicMaterial({
         color: ringColor,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: 0.95,
+        opacity: 0.85,
         depthWrite: false,
         blending: THREE.AdditiveBlending
       });
       const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-      ringMesh.position.copy(pos.clone().multiplyScalar(1.025));
+      ringMesh.position.copy(pos.clone().multiplyScalar(1.02));
       ringMesh.lookAt(pos.clone().multiplyScalar(2.0));
       this.globeGroup.add(ringMesh);
 
-      // 3D Floating City Label Sprite
+      // Minimalist Floating Executive Label
       const sprite = createCitySprite(hub);
       sprite.position.copy(labelPos);
       this.globeGroup.add(sprite);
 
-      this.hubPins.push({ mesh: pinMesh, ring: ringMesh, sprite, isHQ: hub.isHQ, hub, worldPos: pos });
+      this.hubPins.push({
+        index: idx,
+        mesh: pinMesh,
+        ring: ringMesh,
+        stem: stemLine,
+        sprite,
+        isHQ: hub.isHQ,
+        hub,
+        worldPos: pos
+      });
 
-      // Curved Orbital Flight / Data Arcs from UK HQ to each Subsidiary
+      // Curved Connection Arcs from UK HQ to each Hub
       if (!hub.isHQ) {
         const mid = pos.clone().add(hqPos).multiplyScalar(0.5);
         const distance = pos.distanceTo(hqPos);
-        const arcAltitude = radius + Math.min(distance * 0.38, 1.15);
+        const arcAltitude = radius + Math.min(distance * 0.34, 1.05);
         mid.normalize().multiplyScalar(arcAltitude);
 
         const curve = new THREE.QuadraticBezierCurve3(hqPos, mid, pos);
         const curvePoints = curve.getPoints(44);
         const arcGeo = new THREE.BufferGeometry().setFromPoints(curvePoints);
         const arcMat = new THREE.LineBasicMaterial({
-          color: 0x00e5ff,
+          color: 0x00c2ff,
           transparent: true,
-          opacity: 0.75,
+          opacity: 0.45,
           blending: THREE.AdditiveBlending
         });
         const arcLine = new THREE.Line(arcGeo, arcMat);
         this.globeGroup.add(arcLine);
 
-        // Travelling Light Packet along Arc
-        const pulseGeo = new THREE.SphereGeometry(0.045, 12, 12);
+        const pulseGeo = new THREE.SphereGeometry(0.036, 10, 10);
         const pulseMat = new THREE.MeshBasicMaterial({
-          color: 0xffffff,
+          color: 0xf4f7fa,
           blending: THREE.AdditiveBlending
         });
         const pulseMesh = new THREE.Mesh(pulseGeo, pulseMat);
@@ -574,20 +1061,41 @@ class HydroScene {
     this.scene.add(this.globeGroup);
   }
 
+  focusGlobeOnHub(lat, lon, hubIndex = -1) {
+    if (!this.globeGroup) return;
+
+    const phi = (90 - lat) * (Math.PI / 180);
+    const theta = (lon + 180) * (Math.PI / 180);
+    const x = -(Math.sin(phi) * Math.cos(theta));
+    const z = Math.sin(phi) * Math.sin(theta);
+
+    const desiredY = Math.atan2(-x, z);
+    const currentY = this.globeUserRotation.y;
+    const deltaY = ((desiredY - currentY + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+
+    const desiredX = THREE.MathUtils.clamp((lat * Math.PI / 180) * 0.55, -0.45, 0.55);
+
+    this.targetGlobeRotation = {
+      x: desiredX,
+      y: currentY + deltaY
+    };
+    this.globeVelocity = { x: 0, y: 0 };
+    this.focusedHubIndex = hubIndex;
+  }
+
   initModularReactor() {
-    // 3D Modular Electro-Coagulation Treatment Reactor (Slide 02 & Slide 11)
+    // 3D Modular Electro-Coagulation Treatment Reactor (Slide 03 & Slide 12)
     this.reactorGroup = new THREE.Group();
     this.reactorGroup.position.set(3.8, -0.1, 2.2);
     this.reactorGroup.scale.set(0, 0, 0);
 
-    // 1. Outer Translucent Reaction Vessel with Cyan Edge Refraction
     const cylinderGeo = new THREE.CylinderGeometry(1.25, 1.25, 3.8, 36, 1, true);
     const cylinderMat = new THREE.MeshPhysicalMaterial({
-      color: 0x00d2ff,
+      color: 0x00c2ff,
       transparent: true,
-      opacity: 0.28,
-      roughness: 0.1,
-      metalness: 0.15,
+      opacity: 0.24,
+      roughness: 0.12,
+      metalness: 0.18,
       transmission: 0.6,
       ior: 1.333,
       side: THREE.DoubleSide,
@@ -595,12 +1103,11 @@ class HydroScene {
     });
     this.reactorGroup.add(new THREE.Mesh(cylinderGeo, cylinderMat));
 
-    // 2. Stainless Steel Upper & Lower Flanges
     const capGeo = new THREE.CylinderGeometry(1.35, 1.35, 0.18, 36);
     const capMat = new THREE.MeshStandardMaterial({
       color: 0x24334a,
       metalness: 0.9,
-      roughness: 0.2
+      roughness: 0.22
     });
     const topCap = new THREE.Mesh(capGeo, capMat);
     topCap.position.y = 1.95;
@@ -610,41 +1117,38 @@ class HydroScene {
     bottomCap.position.y = -1.95;
     this.reactorGroup.add(bottomCap);
 
-    // 3. Central Electro-Coagulation Core (Active Anode & Cathode Rods)
     for (let i = 0; i < 8; i++) {
       const angle = (i / 8) * Math.PI * 2;
       const isAnode = (i % 2 === 0);
       const rodGeo = new THREE.CylinderGeometry(0.065, 0.065, 3.4, 16);
       const rodMat = new THREE.MeshStandardMaterial({
-        color: isAnode ? 0x00f0ff : 0xd1d5db,
+        color: isAnode ? 0x00c2ff : 0xd1d5db,
         metalness: 0.85,
         roughness: 0.25,
-        emissive: isAnode ? 0x0088cc : 0x000000,
-        emissiveIntensity: 0.45
+        emissive: isAnode ? 0x0077b6 : 0x000000,
+        emissiveIntensity: 0.4
       });
       const rod = new THREE.Mesh(rodGeo, rodMat);
       rod.position.set(Math.cos(angle) * 0.72, 0, Math.sin(angle) * 0.72);
       this.reactorGroup.add(rod);
     }
 
-    // 4. Central Plasma Ion Discharge Core
-    const coreGeo = new THREE.CylinderGeometry(0.18, 0.18, 3.3, 16);
+    const coreGeo = new THREE.CylinderGeometry(0.16, 0.16, 3.3, 16);
     const coreMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
+      color: 0x00c2ff,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.6,
       blending: THREE.AdditiveBlending
     });
     this.reactorGroup.add(new THREE.Mesh(coreGeo, coreMat));
 
-    // 5. Magnetic Clarification Pulse Rings
     this.reactorRings = [];
     for (let j = -2; j <= 2; j++) {
-      const ringGeo = new THREE.TorusGeometry(1.32, 0.035, 12, 36);
+      const ringGeo = new THREE.TorusGeometry(1.32, 0.03, 12, 36);
       const ringMat = new THREE.MeshBasicMaterial({
-        color: 0x10b981,
+        color: 0x00c2ff,
         transparent: true,
-        opacity: 0.65,
+        opacity: 0.45,
         blending: THREE.AdditiveBlending
       });
       const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -664,7 +1168,6 @@ class HydroScene {
       this.renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // Interactive Dragging / Orbiting for Globe (Slide 10)
     const onPointerDown = (clientX, clientY) => {
       if (this.slideIndex !== 9 || !this.globeGroup) return;
 
@@ -672,13 +1175,12 @@ class HydroScene {
       this.pointerNdc.y = -(clientY / window.innerHeight) * 2 + 1;
       this.raycaster.setFromCamera(this.pointerNdc, this.camera);
 
-      // Check if clicking near or on the globe
       const intersects = this.raycaster.intersectObjects([this.earthMesh, this.atmoMesh].filter(Boolean), true);
       const isMobile = window.innerWidth <= 900;
 
-      // On mobile or when pointer is on/near globe sphere, start drag
       if (intersects.length > 0 || (isMobile && clientY > window.innerHeight * 0.35)) {
         this.isDraggingGlobe = true;
+        this.targetGlobeRotation = null;
         this.previousPointerPosition = { x: clientX, y: clientY };
         this.globeVelocity = { x: 0, y: 0 };
         document.body.style.cursor = 'grabbing';
@@ -693,8 +1195,6 @@ class HydroScene {
         const rotSpeed = 0.0065;
         this.globeUserRotation.y += deltaX * rotSpeed;
         this.globeUserRotation.x += deltaY * rotSpeed;
-
-        // Clamp vertical tilt to avoid flipping upside down
         this.globeUserRotation.x = Math.max(-0.8, Math.min(0.8, this.globeUserRotation.x));
 
         this.globeVelocity = {
@@ -709,28 +1209,25 @@ class HydroScene {
       this.mouse.targetX = (clientX / window.innerWidth) * 2 - 1;
       this.mouse.targetY = -(clientY / window.innerHeight) * 2 + 1;
 
-      // 3D Multi-Layer Parallax:
-      // Foreground Content Layer
+      // Multi-Layer DOM Parallax (Foreground vs Middleground vs Deep Canvas)
       const activeContent = document.querySelector(".slide.active .slide-content-layer");
       if (activeContent) {
-        const fgX = (clientX / window.innerWidth - 0.5) * 18;
-        const fgY = (clientY / window.innerHeight - 0.5) * 10;
+        const fgX = (clientX / window.innerWidth - 0.5) * 14;
+        const fgY = (clientY / window.innerHeight - 0.5) * 8;
         activeContent.style.transform = `translate3d(${fgX}px, ${fgY}px, 0)`;
       }
 
-      // Middleground Cutout / Card
       const activeCard = document.querySelector(".slide.active .middleground-card");
       if (activeCard) {
-        const mgX = (clientX / window.innerWidth - 0.5) * -22;
-        const mgY = (clientY / window.innerHeight - 0.5) * -14;
+        const mgX = (clientX / window.innerWidth - 0.5) * -18;
+        const mgY = (clientY / window.innerHeight - 0.5) * -12;
         activeCard.style.transform = `translate3d(${mgX}px, ${mgY}px, 0)`;
       }
 
-      // Deep Monumental Background Text
       const activeMonumental = document.querySelector(".slide.active .monumental-bg-text");
       if (activeMonumental) {
-        const bgX = (clientX / window.innerWidth - 0.5) * -55;
-        const bgY = (clientY / window.innerHeight - 0.5) * -32;
+        const bgX = (clientX / window.innerWidth - 0.5) * -48;
+        const bgY = (clientY / window.innerHeight - 0.5) * -28;
         activeMonumental.style.transform = `translate(calc(-50% + ${bgX}px), calc(-50% + ${bgY}px))`;
       }
     };
@@ -742,12 +1239,10 @@ class HydroScene {
       }
     };
 
-    // Mouse listeners
     window.addEventListener('mousedown', (e) => onPointerDown(e.clientX, e.clientY));
     window.addEventListener('mousemove', (e) => onPointerMove(e.clientX, e.clientY));
     window.addEventListener('mouseup', onPointerUp);
 
-    // Touch listeners for mobile & tablet dragging
     window.addEventListener('touchstart', (e) => {
       if (e.touches && e.touches[0]) {
         onPointerDown(e.touches[0].clientX, e.touches[0].clientY);
@@ -763,8 +1258,23 @@ class HydroScene {
     window.addEventListener('touchend', onPointerUp, { passive: true });
   }
 
-  setSlide(index) {
+  triggerSlideTransition(fromIdx, toIdx, direction, prevWord, nextWord, nextMeta, totalSlides) {
+    if (this.compositor) {
+      this.compositor.triggerTransition(fromIdx, toIdx, direction, prevWord);
+      this.compositor.setSlideMetadata(toIdx, totalSlides, nextWord, nextMeta);
+    }
+  }
+
+  setSlide(index, slideMeta = {}) {
     this.slideIndex = index;
+    if (this.compositor) {
+      this.compositor.setSlideMetadata(
+        index,
+        slideMeta.totalSlides || 13,
+        slideMeta.bgWord,
+        slideMeta.chapterMeta
+      );
+    }
     this.updateCameraForSlide();
   }
 
@@ -776,9 +1286,9 @@ class HydroScene {
   updateCameraForSlide() {
     const angle = (this.slideIndex / 13) * Math.PI * 0.85;
     const radius = 9.8;
-    
-    let targetX = Math.sin(angle) * 2.8;
-    let targetY = Math.cos(angle * 1.4) * 1.3;
+
+    let targetX = Math.sin(angle) * 2.4;
+    let targetY = Math.cos(angle * 1.4) * 1.1;
     let targetZ = radius;
 
     if (this.isDetailOpen) {
@@ -808,9 +1318,9 @@ class HydroScene {
     this.waterUniforms.u_mouse.value.set(this.mouse.x, this.mouse.y);
 
     // Dynamic Camera Parallax & Depth Transitions
-    const camParallaxX = this.targetCameraPos.x + this.mouse.x * 0.75;
-    const camParallaxY = this.targetCameraPos.y + this.mouse.y * 0.5;
-    
+    const camParallaxX = this.targetCameraPos.x + this.mouse.x * 0.6;
+    const camParallaxY = this.targetCameraPos.y + this.mouse.y * 0.4;
+
     this.camera.position.x += (camParallaxX - this.camera.position.x) * 0.045;
     this.camera.position.y += (camParallaxY - this.camera.position.y) * 0.045;
     this.camera.position.z += (this.targetCameraPos.z - this.camera.position.z) * 0.045;
@@ -818,87 +1328,89 @@ class HydroScene {
     this.currentLookAt.lerp(this.targetCameraLookAt, 0.045);
     this.camera.lookAt(this.currentLookAt);
 
-    // Upward rising floating water bubbles simulation
+    // Restrained floating dust simulation
     if (this.particles) {
       const posAttr = this.particles.geometry.attributes.position;
       const count = posAttr.count;
       for (let i = 0; i < count; i++) {
         let y = posAttr.getY(i);
         y += this.particleSpeeds[i];
-        if (y > 11) y = -11;
+        if (y > 10) y = -10;
         posAttr.setY(i, y);
 
-        // Gentle horizontal oscillation
-        let x = posAttr.getX(i);
-        posAttr.setX(i, x + Math.sin(this.time * 2.0 + i) * 0.003);
+        const x = posAttr.getX(i);
+        posAttr.setX(i, x + Math.sin(this.time * 1.4 + i) * 0.0018);
       }
       posAttr.needsUpdate = true;
     }
 
-    // Floating water surface wave tilt
     if (this.surfaceMesh) {
-      this.surfaceMesh.rotation.z = Math.sin(this.time * 0.4) * 0.03 + this.mouse.x * 0.04;
+      this.surfaceMesh.rotation.z = Math.sin(this.time * 0.35) * 0.02 + this.mouse.x * 0.03;
     }
 
-    // Globe Animation
+    // Globe Animation & Target Focusing
     if (this.globeGroup) {
       const isSlide10 = (this.slideIndex === 9);
       const targetScale = isSlide10 ? 1 : 0;
       this.globeGroup.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.08);
-      
-      // Smooth drag orbit physics & gentle continuous planetary spin
+
       if (this.isDraggingGlobe) {
         this.globeGroup.rotation.y = this.globeUserRotation.y;
         this.globeGroup.rotation.x = this.globeUserRotation.x;
+      } else if (this.targetGlobeRotation) {
+        this.globeUserRotation.y += (this.targetGlobeRotation.y - this.globeUserRotation.y) * 0.085;
+        this.globeUserRotation.x += (this.targetGlobeRotation.x - this.globeUserRotation.x) * 0.085;
+        if (Math.abs(this.targetGlobeRotation.y - this.globeUserRotation.y) < 0.002 &&
+            Math.abs(this.targetGlobeRotation.x - this.globeUserRotation.x) < 0.002) {
+          this.targetGlobeRotation = null;
+        }
+        this.globeGroup.rotation.y = this.globeUserRotation.y;
+        this.globeGroup.rotation.x = this.globeUserRotation.x + this.mouse.y * 0.04;
       } else {
-        // Inertia decay
-        this.globeUserRotation.y += this.globeVelocity.y + 0.0035;
+        this.globeUserRotation.y += this.globeVelocity.y + 0.0022;
         this.globeUserRotation.x += this.globeVelocity.x;
         this.globeVelocity.x *= 0.92;
         this.globeVelocity.y *= 0.92;
 
         this.globeGroup.rotation.y = this.globeUserRotation.y;
-        this.globeGroup.rotation.x = this.globeUserRotation.x + this.mouse.y * 0.08;
+        this.globeGroup.rotation.x = this.globeUserRotation.x + this.mouse.y * 0.06;
       }
 
-      // Animate dynamic cloud drift layer slightly offset
       if (this.cloudsMesh) {
-        this.cloudsMesh.rotation.y += 0.0012;
+        this.cloudsMesh.rotation.y += 0.0009;
       }
 
-      // Responsive positioning of globe on right-hand showcase stage
       const isMobile = window.innerWidth <= 900;
       const targetGlobeX = isMobile ? 0.0 : 3.85;
       const targetGlobeY = isMobile ? -2.2 : 0.0;
       const targetGlobeZ = isMobile ? 0.6 : 1.2;
       this.globeGroup.position.lerp(new THREE.Vector3(targetGlobeX, targetGlobeY, targetGlobeZ), 0.06);
 
-      // Animate pulsing beacon rings and dynamic front/back label occlusion
       if (this.hubPins) {
-        // Calculate camera forward direction in globe local space to fade back-facing labels
         const camWorldPos = this.camera.position.clone();
         this.hubPins.forEach(item => {
-          const s = 1.0 + Math.sin(this.time * 4.0 + (item.isHQ ? 0 : 1.5)) * 0.28;
+          const isFocused = item.index === this.focusedHubIndex;
+          const pulseAmp = isFocused ? 0.42 : 0.24;
+          const s = (isFocused ? 1.25 : 1.0) + Math.sin(this.time * 3.8 + (item.isHQ ? 0 : 1.5)) * pulseAmp;
           item.ring.scale.set(s, s, s);
+          item.mesh.scale.setScalar(isFocused ? 1.35 : 1.0);
 
           if (item.sprite && item.worldPos) {
-            // Transform world normal of city pin by current globe rotation
             const pinWorldNormal = item.worldPos.clone().applyEuler(this.globeGroup.rotation).normalize();
             const viewDir = camWorldPos.clone().sub(this.globeGroup.position).normalize();
             const dot = pinWorldNormal.dot(viewDir);
 
-            // If city is on the visible front hemisphere (dot > 0.05), show label; if on backside, smoothly fade
             const opacity = THREE.MathUtils.clamp((dot - 0.05) * 4.0, 0.0, 1.0);
             item.sprite.material.opacity = opacity;
             item.sprite.visible = opacity > 0.02;
+            item.stem.material.opacity = Math.max(0.15, opacity * 0.65);
           }
         });
       }
 
-      // Animate orbital light packet pulses across arcs
       if (this.arcBeams) {
         this.arcBeams.forEach(arc => {
-          arc.progress += 0.008;
+          arc.progress += 0.007;
           if (arc.progress > 1.0) arc.progress = 0.0;
           const pt = arc.curve.getPointAt(arc.progress);
           arc.pulse.position.copy(pt);
@@ -911,13 +1423,23 @@ class HydroScene {
       const isReactorSlide = (this.slideIndex === 2 || this.slideIndex === 11);
       const targetScale = isReactorSlide ? 1 : 0;
       this.reactorGroup.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.08);
-      this.reactorGroup.rotation.y += 0.012;
-      this.reactorGroup.rotation.x = 0.15 + this.mouse.y * 0.08;
+      this.reactorGroup.rotation.y += 0.01;
+      this.reactorGroup.rotation.x = 0.15 + this.mouse.y * 0.06;
       if (this.reactorRings) {
         this.reactorRings.forEach((ring, idx) => {
-          const pulse = 1 + Math.sin(this.time * 3.5 + idx * 0.8) * 0.05;
+          const pulse = 1 + Math.sin(this.time * 3.2 + idx * 0.8) * 0.04;
           ring.scale.set(pulse, pulse, pulse);
         });
+      }
+    }
+
+    // Render 4-Layer Canvas Compositing Frame synchronized with WebGL frame
+    if (this.compositor) {
+      if (this.compositor.hasHtmlInCanvas) {
+        this.compositor.updateFrameInputs(this.time, this.mouse, this.slideIndex);
+        this.compositor.requestRender();
+      } else {
+        this.compositor.renderCompositeFrame(this.time, this.mouse, this.slideIndex);
       }
     }
 
@@ -926,3 +1448,4 @@ class HydroScene {
 }
 
 window.HydroScene = HydroScene;
+window.HydroCanvasCompositor = HydroCanvasCompositor;
