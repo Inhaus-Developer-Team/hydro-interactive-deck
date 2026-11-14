@@ -1522,10 +1522,16 @@ body.presenter-mode .deck-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 36px;
   max-width: 1400px;
   margin-left: auto;
   margin-right: auto;
+}
+
+.grid-modal-header .drawer-close-btn {
+  position: static;
+  flex-shrink: 0;
 }
 
 .grid-modal-title {
@@ -1533,8 +1539,9 @@ body.presenter-mode .deck-footer {
   font-weight: 600;
   letter-spacing: -0.02em;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .grid-modal-title span {
@@ -1732,7 +1739,7 @@ body.presenter-mode .deck-footer {
     display: none;
   }
   .slide-content-layer {
-    padding-bottom: 24px;
+    padding-bottom: 44px;
     width: 100%;
   }
   .grid-2col {
