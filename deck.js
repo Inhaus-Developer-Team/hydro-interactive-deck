@@ -11,10 +11,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const totalSlides = slides.length;
   let currentSlide = 0;
 
-  // Parse initial slide and modal states from URL hash or query parameters
+  // Parse initial slide and grid modal state from URL hash or query parameters
   const hashMatch = window.location.hash.match(/slide=(\d+)/);
   const searchMatch = window.location.search.match(/slide=(\d+)/);
-  const detailParam = window.location.hash.includes("detail=1") || window.location.search.includes("detail=1");
   const gridParam = window.location.hash.includes("grid=1") || window.location.search.includes("grid=1");
 
   if (hashMatch) {
@@ -25,102 +24,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!Number.isNaN(s) && s >= 0 && s < totalSlides) currentSlide = s;
   }
 
-  let isDetailOpen = false;
   let isGridOpen = false;
   let isHelpOpen = false;
   let isScrolling = false;
 
-  // Initialize 3D Aquatic Engine & HTML-in-Canvas Compositor
+  // Initialize 3D Stage & HTML-in-Canvas Compositor
   const scene = new HydroScene("webgl-canvas");
 
   // Web Audio Synthesizer for Subtle Executive UI Feedback
   let audioCtx = null;
   let ambientGain = null;
   let isMuted = true;
-
-  // --- Dual-Clip Cinematic Flight Background Controller ---
-  const flightVidA = document.getElementById("flight-video-above");
-  const flightVidB = document.getElementById("flight-video-under");
-  const flightVideos = [flightVidA, flightVidB].filter(Boolean);
-  const VIDEO_SEAM = 0.50;
-  const SEAM_HALF_WIDTH = 0.05;
-
-  let targetProgress = 0;
-  let smoothedProgress = 0;
-
-  flightVideos.forEach(v => {
-    v.muted = true;
-    v.playsInline = true;
-    const nudge = () => {
-      try {
-        if (v.currentTime === 0) v.currentTime = 0.01;
-      } catch (e) {}
-    };
-    if (v.readyState >= 1) nudge();
-    else v.addEventListener("loadedmetadata", nudge, { once: true });
-  });
-
-  function getSlideProgress(slideIdx) {
-    if (totalSlides <= 1) return 0;
-    return Math.max(0, Math.min(slideIdx / (totalSlides - 1), 1));
-  }
-
-  function setFlightTargetProgress(prog) {
-    targetProgress = Math.max(0, Math.min(prog, 1));
-  }
-
-  function updateFlightFrame() {
-    const diff = targetProgress - smoothedProgress;
-    if (Math.abs(diff) > 0.0005) {
-      smoothedProgress += diff * 0.12;
-    } else {
-      smoothedProgress = targetProgress;
-    }
-
-    const q = smoothedProgress;
-    let bMix = 0;
-    if (q <= VIDEO_SEAM - SEAM_HALF_WIDTH) {
-      bMix = 0;
-    } else if (q >= VIDEO_SEAM + SEAM_HALF_WIDTH) {
-      bMix = 1;
-    } else {
-      bMix = (q - (VIDEO_SEAM - SEAM_HALF_WIDTH)) / (2 * SEAM_HALF_WIDTH);
-    }
-
-    if (flightVidA) flightVidA.style.opacity = ((1 - bMix) * 0.55).toFixed(3);
-    if (flightVidB) flightVidB.style.opacity = (bMix * 0.55).toFixed(3);
-
-    if (flightVidA) {
-      const want01A = Math.max(0, Math.min(q / VIDEO_SEAM, 1));
-      const durA = flightVidA.duration;
-      if (durA && Number.isFinite(durA)) {
-        const wantA = want01A * durA;
-        const nowA = flightVidA.currentTime;
-        if (Math.abs(wantA - nowA) > 0.012) {
-          try {
-            flightVidA.currentTime = nowA + (wantA - nowA) * 0.26;
-          } catch (e) {}
-        }
-      }
-    }
-
-    if (flightVidB) {
-      const want01B = Math.max(0, Math.min((q - VIDEO_SEAM) / (1 - VIDEO_SEAM), 1));
-      const durB = flightVidB.duration;
-      if (durB && Number.isFinite(durB)) {
-        const wantB = want01B * durB;
-        const nowB = flightVidB.currentTime;
-        if (Math.abs(wantB - nowB) > 0.012) {
-          try {
-            flightVidB.currentTime = nowB + (wantB - nowB) * 0.26;
-          } catch (e) {}
-        }
-      }
-    }
-
-    requestAnimationFrame(updateFlightFrame);
-  }
-  requestAnimationFrame(updateFlightFrame);
 
   function initAudio() {
     if (audioCtx) return;
@@ -205,6 +119,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // DOM Elements
+  const stageBackdrop = document.getElementById("slide-stage-backdrop");
   const currentNumEl = document.querySelector(".current-num");
   const totalNumEl = document.querySelector(".total-num");
   const progressFill = document.querySelector(".progress-fill");
@@ -212,245 +127,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const prevBtn = document.getElementById("btn-prev");
   const nextBtn = document.getElementById("btn-next");
   const sectionTag = document.querySelector(".brand-section-tag");
-  const drawer = document.getElementById("detail-drawer");
-  const drawerCloseBtn = drawer ? drawer.querySelector(".drawer-close-btn") : null;
-  const drawerTag = document.querySelector(".drawer-tag");
-  const drawerTitle = document.querySelector(".drawer-title");
-  const drawerBody = document.querySelector(".drawer-body");
   const gridModal = document.getElementById("grid-overview-modal");
   const gridBtn = document.getElementById("btn-grid-view");
-  const headerBriefBtn = document.getElementById("btn-header-brief");
   const closeGridBtn = document.getElementById("btn-close-grid");
   const slidesMatrix = document.querySelector(".slides-matrix");
 
   if (totalNumEl) {
     totalNumEl.textContent = String(totalSlides).padStart(2, "0");
   }
-
-  // Executive Briefing Drawer Content per Slide
-  const detailData = {
-    0: {
-      tag: "Company Overview",
-      title: "Water. Technology. Possibility.",
-      body: `
-        <p>Hydro Industries is a global leader in designing, constructing, installing, and operating high-performance modular water treatment solutions.</p>
-        <div class="drawer-stats-grid">
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">2010</div>
-            <div class="drawer-stat-label">Founded in Wales, UK</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">Global</div>
-            <div class="drawer-stat-label">Multi-National Footprint</div>
-          </div>
-        </div>
-        <p>From industrial effluent detox to community drinking water supply, Hydro applies proprietary patented electro-chemical processes to solve the toughest water challenges on earth.</p>
-      `
-    },
-    1: {
-      tag: "01 / Introduction",
-      title: "Technology for a world of water.",
-      body: `
-        <p>Every industrial and municipal challenge has unique chemical and geological signatures. Hydro engineers end-to-end solutions that adapt modular process steps to exact client specifications.</p>
-        <div class="drawer-stats-grid">
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">100%</div>
-            <div class="drawer-stat-label">Custom Modular Architecture</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">Patented</div>
-            <div class="drawer-stat-label">Proprietary Electro-Processes</div>
-          </div>
-        </div>
-        <p>Our rapid-deployment units can be transported and commissioned anywhere in the world, operating reliably under extreme climatic conditions.</p>
-      `
-    },
-    2: {
-      tag: "02 / Capabilities",
-      title: "Full Lifecycle: Design to Operation",
-      body: `
-        <p>Hydro provides complete end-to-end partnership across four unified phases:</p>
-        <p><strong>01. Design:</strong> Custom chemical engineering, bench-scale testing, simulation, and CAD integration tailored to site conditions.</p>
-        <p><strong>02. Construct:</strong> Precision manufacturing in controlled UK facilities with highest quality standards.</p>
-        <p><strong>03. Install:</strong> Rapid on-site civil and electrical commissioning worldwide.</p>
-        <p><strong>04. Operate:</strong> 24/7 telemetry monitoring, preventative servicing, and BOOT (Build-Own-Operate-Transfer) contracts.</p>
-      `
-    },
-    3: {
-      tag: "03 / Case Studies",
-      title: "Proven Impact in Complex Environments",
-      body: `
-        <p>Our track record spans severe landfill leachates, legacy acid mine drainage, hyper-saline effluents, and heavy industrial wastewater.</p>
-        <div class="drawer-stats-grid">
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">&gt;98%</div>
-            <div class="drawer-stat-label">Heavy Metal Elimination</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">&gt;99%</div>
-            <div class="drawer-stat-label">Runoff Turbidity Reduction</div>
-          </div>
-        </div>
-        <p>Explore the following case studies across the Americas, Europe, and the Middle East to examine the exact measured performance.</p>
-      `
-    },
-    4: {
-      tag: "Case Study / Quito, Ecuador",
-      title: "Protecting Andean River Basins",
-      body: `
-        <p><strong>Client:</strong> Municipality of Quito</p>
-        <p><strong>The Challenge:</strong> Leachate from landfill sites represents one of the most toxic chemical cocktails: high BOD, COD, ammonia, and toxic heavy metals threatening local river networks.</p>
-        <div class="drawer-stats-grid">
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">600–800</div>
-            <div class="drawer-stat-label">Tonnes Leachate / Day</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">Q3 2024</div>
-            <div class="drawer-stat-label">Commissioning Completed</div>
-          </div>
-        </div>
-        <p>Hydro engineered a specialized multi-stage treatment plant that neutralizes toxic contaminants and safely returns clean water to the natural ecosystem.</p>
-      `
-    },
-    5: {
-      tag: "Case Study / Frongoch, Wales",
-      title: "Remediating Historic Mine Drainage",
-      body: `
-        <p><strong>Partner:</strong> Natural Resources Wales</p>
-        <p><strong>The Challenge:</strong> Over 1,300 abandoned metal mines across Wales discharge acidic, zinc- and lead-laden water into more than 200 kilometers of pristine rivers and streams.</p>
-        <div class="drawer-stats-grid">
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">&gt;98%</div>
-            <div class="drawer-stat-label">Metal Pollutants Removed</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">200+ km</div>
-            <div class="drawer-stat-label">Protected River Systems</div>
-          </div>
-        </div>
-        <p>Hydro applied its proprietary electro-coagulation technology at Frongoch, achieving over 98% reduction in dissolved metal ions with minimal sludge generation.</p>
-      `
-    },
-    6: {
-      tag: "Case Study / Roadbridge, South Wales",
-      title: "Rapid Construction Runoff Clarification",
-      body: `
-        <p><strong>Site:</strong> Roadbridge Major Infrastructure, South Wales</p>
-        <p><strong>The Challenge:</strong> Heavy rainfall on earthworks generated highly turbid construction runoff that exceeded regulatory thresholds set by the Environment Agency.</p>
-        <div class="drawer-stats-grid">
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">828 → 5.91</div>
-            <div class="drawer-stat-label">NTU Turbidity Reduction</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">&gt;99%</div>
-            <div class="drawer-stat-label">Suspended Solids Clarification</div>
-          </div>
-        </div>
-        <p>Four mobile Hydro Current treatment plants operated continuously on-site, successfully achieving compliance and enabling safe environmental discharge.</p>
-      `
-    },
-    7: {
-      tag: "04 / Treatment Performance",
-      title: "Rigorous Chemical Verification",
-      body: `
-        <p>Measured analytical dataset comparing raw input versus discharge after Hydro electro-treatment against strict discharge standards (all values in mg/l):</p>
-        <p>• <strong>COD:</strong> Reduced from 4,856 to 26 (Standard: 100)<br>
-           • <strong>Oil &amp; Grease:</strong> Reduced from 300 to 2 (Standard: 15)<br>
-           • <strong>TSS:</strong> Reduced from 250 to 3 (Standard: 60)<br>
-           • <strong>BOD:</strong> Reduced from 2,050 to 8 (Standard: 60)<br>
-           • <strong>Total Nitrogen:</strong> Reduced from 400 to 7 (Standard: 10)<br>
-           • <strong>Ammonia:</strong> Reduced from 247 to 2 (Standard: 3)</p>
-      `
-    },
-    8: {
-      tag: "05 / Corporate Development",
-      title: "Strategic Growth Roadmap",
-      body: `
-        <p>A history of continuous technological innovation and commercial expansion:</p>
-        <p><strong>2010:</strong> Hydro founded in Wales, developing proprietary core electro-treatment intellectual property.<br>
-           <strong>2018:</strong> Major BEE'AH wastewater recycling plant commissioned in Sharjah, UAE.<br>
-           <strong>2024:</strong> Delivery and commissioning of the Quito Leachate Treatment Plant in Ecuador.<br>
-           <strong>2025:</strong> Acquisition and integration of the JEMS Environmental specialist team.<br>
-           <strong>2026:</strong> Expanded international deployments into Sucre, Montecristi, and Santa Cruz.</p>
-      `
-    },
-    9: {
-      tag: "06 / Group Structure",
-      title: "Global Operations Architecture",
-      body: `
-        <p>Headquartered in the United Kingdom, Hydro operates through 100% wholly owned regional operating companies and strategic local joint ventures:</p>
-        <div class="drawer-stats-grid">
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">UK</div>
-            <div class="drawer-stat-label">Group Headquarters &amp; R&amp;D</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">MENA &amp; LatAm</div>
-            <div class="drawer-stat-label">Active Operating Hubs</div>
-          </div>
-        </div>
-        <p>Wholly owned subsidiaries in Ecuador, Colombia, Saudi Arabia, Egypt, and Hydro Environmental Limited, supported by a joint venture office in Bahrain.</p>
-      `
-    },
-    10: {
-      tag: "Case Study / BEE'AH, Sharjah",
-      title: "Circular Water Economy in the Desert",
-      body: `
-        <p><strong>Partner:</strong> BEE'AH Group, Sharjah, UAE</p>
-        <p><strong>Facility:</strong> Integrated Landfill Liquid Waste &amp; Industrial Effluent Reclamation Plant</p>
-        <div class="drawer-stats-grid">
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">500 m³</div>
-            <div class="drawer-stat-label">Daily Capacity</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">1.5M</div>
-            <div class="drawer-stat-label">Tonnes Treated Since 2018</div>
-          </div>
-        </div>
-        <p>This award-winning plant converts contaminated leachate and commercial waste into irrigation-grade water for municipal landscaping, conserving precious natural groundwater.</p>
-      `
-    },
-    11: {
-      tag: "07 / Technology Development",
-      title: "Next-Gen Low-Energy Desalination",
-      body: `
-        <p>Traditional reverse osmosis desalination suffers from severe limitations: high electrical power draw and 50–60% brine waste rejected back into marine ecosystems.</p>
-        <div class="drawer-stats-grid">
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">70%+</div>
-            <div class="drawer-stat-label">Hydro Freshwater Recovery</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">-35%</div>
-            <div class="drawer-stat-label">Reduced Brine Discharge</div>
-          </div>
-        </div>
-        <p>Hydro's development pipeline integrates electro-chemical pre-conditioning, drastically lowering osmotic pressure requirements and membrane fouling.</p>
-      `
-    },
-    12: {
-      tag: "Case Study / Capestone Poultry, UK",
-      title: "Closed-Loop Agricultural Water Reclamation",
-      body: `
-        <p><strong>Client:</strong> Capestone Organic Poultry, Wales, UK</p>
-        <p><strong>Integrated Treatment Train:</strong> Screening → Dissolved Air Flotation (DAF) → Moving Bed Biofilm Reactor (MBBR) → Reverse Osmosis (RO) → UV Disinfection.</p>
-        <div class="drawer-stats-grid">
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">70%</div>
-            <div class="drawer-stat-label">Process Water Reused</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-num">45 m³/h</div>
-            <div class="drawer-stat-label">Output Capacity</div>
-          </div>
-        </div>
-        <p>Built under a long-term operate &amp; maintain partnership, this plant reduces reliance on local aquifers while guaranteeing pathogen-free recycled water.</p>
-      `
-    }
-  };
 
   function focusActiveSlideHeading() {
     const activeHeading = slides[currentSlide]?.querySelector(".slide-title-hero");
@@ -459,7 +143,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function applySlideDOMUpdate(newIndex) {
+  function updateStageBackdrop(slideIdx, animateSettle = true) {
+    if (!stageBackdrop) return;
+    stageBackdrop.dataset.slideBg = String(slideIdx);
+    stageBackdrop.classList.remove("stage-settling");
+    if (animateSettle) {
+      void stageBackdrop.offsetWidth;
+      stageBackdrop.classList.add("stage-settling");
+    }
+  }
+
+  function applySlideDOMUpdate(newIndex, animateBackdrop = true) {
     slides.forEach(s => s.classList.remove("active"));
     currentSlide = newIndex;
     const activeSlideEl = slides[currentSlide];
@@ -467,6 +161,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const bgWord = activeSlideEl.dataset.bgWord || "HYDRO";
     const chapterMeta = activeSlideEl.dataset.layerMeta || "COMPANY OVERVIEW";
+
+    updateStageBackdrop(newIndex, animateBackdrop);
 
     if (currentNumEl) {
       currentNumEl.textContent = String(currentSlide + 1).padStart(2, "0");
@@ -488,19 +184,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (prevBtn) prevBtn.disabled = currentSlide === 0;
     if (nextBtn) nextBtn.disabled = currentSlide === totalSlides - 1;
 
-    if (isDetailOpen) {
-      closeDetail();
-    }
-
     scene.setSlide(currentSlide, { totalSlides, bgWord, chapterMeta });
     if (typeof resetAutoplayProgress === "function") resetAutoplayProgress();
-
-    setFlightTargetProgress(getSlideProgress(currentSlide));
-
-    const ambientVid = document.getElementById("ambient-video-backdrop");
-    if (ambientVid) {
-      ambientVid.style.opacity = currentSlide === 0 ? "0.14" : "0.06";
-    }
 
     if (currentSlide === 6) {
       const rawBar = document.querySelector(".bar-fill.raw");
@@ -511,7 +196,7 @@ document.addEventListener("DOMContentLoaded", () => {
         setTimeout(() => {
           rawBar.style.width = "100%";
           treatedBar.style.width = "0.71%";
-        }, 250);
+        }, 260);
       }
     }
   }
@@ -535,42 +220,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (!animateTransition || prefersReducedMotion || !document.startViewTransition || prevSlide === newIndex) {
-      applySlideDOMUpdate(newIndex);
+      applySlideDOMUpdate(newIndex, animateTransition);
       if (animateTransition) focusActiveSlideHeading();
       return;
     }
 
     const transition = document.startViewTransition(() => {
-      applySlideDOMUpdate(newIndex);
+      applySlideDOMUpdate(newIndex, true);
     });
     transition.finished.finally(() => {
       focusActiveSlideHeading();
     });
   }
 
-  function openDetail() {
-    const data = detailData[currentSlide];
-    if (!data || !drawer) return;
-
-    hideControlsPopover();
-    playUiClick(680);
-
-    if (drawerTag) drawerTag.textContent = data.tag;
-    if (drawerTitle) drawerTitle.textContent = data.title;
-    if (drawerBody) drawerBody.innerHTML = data.body;
-    drawer.classList.add("open");
-    isDetailOpen = true;
-
-    scene.setDetailMode(true);
-  }
-
-  function closeDetail() {
-    if (!drawer) return;
-    playUiClick(360);
-    drawer.classList.remove("open");
-    isDetailOpen = false;
-    scene.setDetailMode(false);
-  }
+  // Slide 04 Interactive Case Study Preview Cards -> Direct Case Jump
+  document.querySelectorAll(".case-preview-card[data-target-slide]").forEach(card => {
+    card.addEventListener("click", () => {
+      const target = parseInt(card.dataset.targetSlide, 10);
+      if (!Number.isNaN(target)) {
+        updateSlide(target);
+      }
+    });
+  });
 
   // Interactive Performance Table Row Selection (Slide 08)
   const perfRows = document.querySelectorAll(".perf-table tbody tr");
@@ -586,7 +257,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const noteEl = document.getElementById("perf-interactive-note");
       if (noteEl) {
-        noteEl.innerHTML = `<span style="color: #00c2ff; font-weight: 600;">${param}</span>: <strong>${inputVal.toLocaleString()} mg/l</strong> reduced to <strong>${treatedVal} mg/l</strong> (<span style="color: #10b981; font-weight: 700;">-${reduction}% reduction</span>).`;
+        noteEl.textContent = "";
+        const paramSpan = document.createElement("span");
+        paramSpan.style.color = "#00c2ff";
+        paramSpan.style.fontWeight = "600";
+        paramSpan.textContent = param;
+
+        const sepText = document.createTextNode(": ");
+        const inStrong = document.createElement("strong");
+        inStrong.textContent = `${inputVal.toLocaleString()} mg/l`;
+
+        const midText = document.createTextNode(" reduced to ");
+        const outStrong = document.createElement("strong");
+        outStrong.textContent = `${treatedVal} mg/l`;
+
+        const openParen = document.createTextNode(" (");
+        const redSpan = document.createElement("span");
+        redSpan.style.color = "#10b981";
+        redSpan.style.fontWeight = "700";
+        redSpan.textContent = `-${reduction}% reduction`;
+
+        const closeParen = document.createTextNode(").");
+        noteEl.append(paramSpan, sepText, inStrong, midText, outStrong, openParen, redSpan, closeParen);
       }
       playUiClick(600);
     });
@@ -606,8 +298,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // Slide 10 Interactive Subsidiary Cards -> Smooth 3D Globe Hub Focus
+  // Slide 10 Interactive Subsidiary Cards -> Smooth 3D Globe Hub Focus + Inline Readout
   const hubItems = document.querySelectorAll(".hub-item[data-lat][data-lon]");
+  const hubReadoutEl = document.getElementById("active-hub-readout");
   hubItems.forEach(item => {
     const activateHub = (playAudio = true) => {
       hubItems.forEach(el => el.classList.remove("active-hub"));
@@ -619,6 +312,24 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!Number.isNaN(lat) && !Number.isNaN(lon) && typeof scene.focusGlobeOnHub === "function") {
         scene.focusGlobeOnHub(lat, lon, hubIndex);
       }
+
+      if (hubReadoutEl) {
+        const roleEl = hubReadoutEl.querySelector(".hub-readout-role");
+        const coordsEl = hubReadoutEl.querySelector(".hub-readout-coords");
+        const entityEl = hubReadoutEl.querySelector(".hub-readout-entity");
+        const scopeEl = hubReadoutEl.querySelector(".hub-readout-scope");
+
+        const entityName = item.querySelector(".hub-name")?.textContent.trim() || "";
+        const entityCountry = item.querySelector(".hub-country")?.textContent.trim() || "";
+        const latStr = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? "N" : "S"}`;
+        const lonStr = `${Math.abs(lon).toFixed(1)}°${lon >= 0 ? "E" : "W"}`;
+
+        if (roleEl) roleEl.textContent = item.dataset.role || "Active Operating Entity";
+        if (coordsEl) coordsEl.textContent = `${latStr}, ${lonStr}`;
+        if (entityEl) entityEl.textContent = `${entityName} — ${entityCountry}`;
+        if (scopeEl) scopeEl.textContent = item.dataset.scope || "";
+      }
+
       if (playAudio) playUiClick(620);
     };
 
@@ -657,7 +368,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Navigation & Drawer Listeners
+  // Footer Navigation & Progress Scrubber
   if (prevBtn) prevBtn.addEventListener("click", () => updateSlide(currentSlide - 1));
   if (nextBtn) nextBtn.addEventListener("click", () => updateSlide(currentSlide + 1));
 
@@ -670,28 +381,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  document.querySelectorAll(".btn-see-details").forEach(btn => {
-    btn.addEventListener("click", e => {
-      e.stopPropagation();
-      openDetail();
-    });
-  });
-
-  if (headerBriefBtn) {
-    headerBriefBtn.addEventListener("click", () => {
-      if (isDetailOpen) closeDetail();
-      else openDetail();
-    });
-  }
-
-  if (drawerCloseBtn) {
-    drawerCloseBtn.addEventListener("click", closeDetail);
-  }
-
   // Slide Index Grid Modal
   function populateSlidesMatrix() {
     if (!slidesMatrix) return;
-    slidesMatrix.innerHTML = "";
+    slidesMatrix.textContent = "";
     slides.forEach((slide, idx) => {
       const card = document.createElement("div");
       card.className = `matrix-card ${idx === currentSlide ? "current" : ""}`;
@@ -700,13 +393,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const cat = slide.querySelector(".slide-category")?.textContent.trim() || `Slide ${idx + 1}`;
       const titleEl = slide.querySelector(".slide-title-hero");
-      const title = titleEl ? titleEl.innerText.replace(/\n/g, " ") : `Slide ${idx + 1}`;
+      const title = titleEl ? titleEl.innerText.replace(/\n+/g, " ").trim() : `Slide ${idx + 1}`;
 
-      card.innerHTML = `
-        <div class="matrix-card-num">${String(idx + 1).padStart(2, "0")} / ${String(totalSlides).padStart(2, "0")}</div>
-        <div class="matrix-card-category">${cat}</div>
-        <div class="matrix-card-title">${title}</div>
-      `;
+      const numEl = document.createElement("div");
+      numEl.className = "matrix-card-num";
+      numEl.textContent = `${String(idx + 1).padStart(2, "0")} / ${String(totalSlides).padStart(2, "0")}`;
+
+      const catEl = document.createElement("div");
+      catEl.className = "matrix-card-category";
+      catEl.textContent = cat;
+
+      const headingEl = document.createElement("div");
+      headingEl.className = "matrix-card-title";
+      headingEl.textContent = title;
+
+      card.append(numEl, catEl, headingEl);
 
       const selectCard = () => {
         closeGrid();
@@ -828,7 +529,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (autoplayProgressBar) autoplayProgressBar.style.width = `${progress}%`;
 
     if (elapsed >= autoplayDuration) {
-      if (!isDetailOpen && !isGridOpen && !isHelpOpen) {
+      if (!isGridOpen && !isHelpOpen) {
         updateSlide((currentSlide + 1) % totalSlides);
       }
       resetAutoplayProgress();
@@ -861,7 +562,6 @@ document.addEventListener("DOMContentLoaded", () => {
       updateSlide(currentSlide - 1);
     } else if (e.key === "Escape") {
       if (isGridOpen) closeGrid();
-      if (isDetailOpen) closeDetail();
       if (isHelpOpen) closeHelp();
       hideControlsPopover();
     } else if (e.key === "a" || e.key === "A") {
@@ -880,15 +580,12 @@ document.addEventListener("DOMContentLoaded", () => {
       playUiClick(550);
     } else if (e.key === "g" || e.key === "G") {
       toggleGrid();
-    } else if (e.key === "d" || e.key === "D" || (e.key === "Enter" && !e.target.closest("button, [role='button'], summary, a"))) {
-      if (isDetailOpen) closeDetail();
-      else openDetail();
     }
   });
 
   // Mouse Wheel Navigation (Debounced)
   window.addEventListener("wheel", e => {
-    if (isDetailOpen || isGridOpen || isHelpOpen) return;
+    if (isGridOpen || isHelpOpen) return;
     if (isScrolling) return;
 
     if (Math.abs(e.deltaY) > 35) {
@@ -918,7 +615,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }, { passive: true });
 
   window.addEventListener("touchend", e => {
-    if (isDetailOpen || isGridOpen || isHelpOpen) return;
+    if (isGridOpen || isHelpOpen) return;
     if (scene && scene.isDraggingGlobe) return;
 
     if (e.changedTouches && e.changedTouches[0]) {
@@ -937,9 +634,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Initial Slide Mount (without transition flicker)
   updateSlide(currentSlide, false);
-  if (detailParam) {
-    setTimeout(() => openDetail(), 150);
-  }
   if (gridParam) {
     setTimeout(() => openGrid(), 150);
   }

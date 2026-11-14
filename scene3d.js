@@ -25,7 +25,7 @@ class HydroCanvasCompositor {
     // Transition animation state (Layer 3)
     this.transitionActive = false;
     this.transitionStart = 0;
-    this.transitionDuration = 650;
+    this.transitionDuration = 850;
     this.transitionDirection = 1;
     this.outgoingWord = "HYDRO";
 
@@ -218,6 +218,14 @@ class HydroCanvasCompositor {
     }
   }
 
+  /**
+   * Evaluate cubic-bezier(0.22, 1, 0.36, 1) ease-out curve for editorial choreography.
+   */
+  easeOutQuintic(t) {
+    const u = 1 - Math.min(1, Math.max(0, t));
+    return 1 - Math.pow(u, 4);
+  }
+
   renderCompositeFrame(time, mouse, slideIndex) {
     if (!this.ctx || !this.canvas) return;
     this._lastTime = time;
@@ -232,24 +240,24 @@ class HydroCanvasCompositor {
       this.refreshElementCache(nowMs);
     }
 
-    // Update Layer 3 transition progress
+    // Update Layer 3 & Layer 0 transition progress (850ms editorial curve)
     let wipeProgress = 1;
     if (this.transitionActive) {
       const elapsed = nowMs - this.transitionStart;
       const rawT = Math.min(1, Math.max(0, elapsed / this.transitionDuration));
-      wipeProgress = 1 - Math.pow(1 - rawT, 3); // Cubic ease-out
+      wipeProgress = this.easeOutQuintic(rawT);
       if (rawT >= 1) {
         this.transitionActive = false;
       }
     }
 
-    const slideSlip = this.transitionActive ? (1 - wipeProgress) * 48 * this.transitionDirection : 0;
+    const slideSlip = this.transitionActive ? (1 - wipeProgress) * 44 * this.transitionDirection : 0;
 
     // Drive CSS custom properties for synchronized DOM depth parallax
     const rootStyle = document.documentElement.style;
-    rootStyle.setProperty("--layer-bg-offset", `${(-38 * mx + slideSlip * 1.4).toFixed(2)}px`);
-    rootStyle.setProperty("--layer-mid-offset", `${(-16 * mx + slideSlip * 1.0).toFixed(2)}px`);
-    rootStyle.setProperty("--layer-fg-offset", `${(10 * mx + slideSlip * 0.7).toFixed(2)}px`);
+    rootStyle.setProperty("--layer-bg-offset", `${(-32 * mx + slideSlip * 1.4).toFixed(2)}px`);
+    rootStyle.setProperty("--layer-mid-offset", `${(-14 * mx + slideSlip * 1.0).toFixed(2)}px`);
+    rootStyle.setProperty("--layer-fg-offset", `${(8 * mx + slideSlip * 0.7).toFixed(2)}px`);
 
     const ctx = this.ctx;
     ctx.save();
@@ -258,24 +266,24 @@ class HydroCanvasCompositor {
     ctx.scale(this.dpr, this.dpr);
 
     // =========================================================================
-    // LAYER 0: Deep Architectural Watermark Pass (-0.38x Parallax + source-atop)
+    // LAYER 0: Rising Architectural Monumental Word + Masked Caustic Pass
     // =========================================================================
     this.renderLayer0MonumentalWord(ctx, time, mx, my, slideSlip * 1.4, wipeProgress);
 
     // =========================================================================
-    // LAYER 1: Precision Architectural Grid & Laminar Wave Horizon (-0.16x)
+    // LAYER 1: Precision Architectural Grid & Laminar Wave Horizon
     // =========================================================================
     this.renderLayer1GridAndHorizon(ctx, time, mx, my, slideIndex, slideSlip * 1.0);
 
     // =========================================================================
-    // LAYER 2: Element-Synced Specular Frames & Kinetic Echoes (+0.10x to +0.22x)
+    // LAYER 2: Element-Synced Specular Frames & Kinetic Echoes
     // =========================================================================
     this.renderLayer2ElementFrames(ctx, time, mx, my, slideSlip * 0.7, wipeProgress);
 
     // =========================================================================
-    // LAYER 3: Directional Liquid Wipe & Alpha Curtain Transition Pass
+    // LAYER 3: Editorial Diagonal Curtain Wipe ('destination-out' + 'screen')
     // =========================================================================
-    if (this.transitionActive && wipeProgress < 0.995) {
+    if (this.transitionActive && wipeProgress < 0.996) {
       this.renderLayer3TransitionWipe(ctx, wipeProgress, time);
     }
 
@@ -298,30 +306,42 @@ class HydroCanvasCompositor {
     bCtx.textAlign = "center";
     bCtx.textBaseline = "middle";
 
-    const centerX = w * 0.52 - mx * 52 + offsetX;
-    const centerY = h * 0.51 + my * 28;
+    // Emerge upward from behind a lower horizon clip mask (Dribbble / Marlin motif)
+    const riseOffset = (1 - wipeProgress) * 110;
+    const centerX = w * 0.52 - mx * 44 + offsetX;
+    const baseCenterY = h * 0.51 + my * 24;
+    const horizonMaskY = baseCenterY + fontSize * 0.36;
 
-    // Paint base silhouette of monumental word
+    bCtx.beginPath();
+    bCtx.rect(0, 0, w, horizonMaskY);
+    bCtx.clip();
+
+    // Paint base silhouette of rising monumental word
     bCtx.globalCompositeOperation = "source-over";
-    bCtx.fillStyle = "rgba(180, 218, 255, 0.9)";
-    bCtx.fillText(this.bgWord, centerX, centerY);
+    bCtx.fillStyle = "rgba(180, 218, 255, 0.88)";
+    bCtx.fillText(this.bgWord, centerX, baseCenterY + riseOffset);
 
     // Mask caustic luminance sweep strictly inside typography shapes ('source-atop')
     bCtx.globalCompositeOperation = "source-atop";
-    const sweepPos = ((Math.sin(time * 0.45) * 0.5 + 0.5) * 0.8 + 0.1) * w;
-    const causticGrad = bCtx.createLinearGradient(sweepPos - w * 0.35, centerY - fontSize * 0.6, sweepPos + w * 0.35, centerY + fontSize * 0.6);
-    causticGrad.addColorStop(0.0, "rgba(15, 38, 74, 0.35)");
-    causticGrad.addColorStop(0.45, "rgba(0, 194, 255, 0.85)");
-    causticGrad.addColorStop(0.55, "rgba(244, 247, 250, 0.95)");
-    causticGrad.addColorStop(1.0, "rgba(15, 38, 74, 0.35)");
+    const sweepPos = ((Math.sin(time * 0.42) * 0.5 + 0.5) * 0.8 + 0.1) * w;
+    const causticGrad = bCtx.createLinearGradient(
+      sweepPos - w * 0.35,
+      baseCenterY - fontSize * 0.6,
+      sweepPos + w * 0.35,
+      baseCenterY + fontSize * 0.6
+    );
+    causticGrad.addColorStop(0.0, "rgba(15, 38, 74, 0.32)");
+    causticGrad.addColorStop(0.45, "rgba(0, 194, 255, 0.82)");
+    causticGrad.addColorStop(0.55, "rgba(244, 247, 250, 0.94)");
+    causticGrad.addColorStop(1.0, "rgba(15, 38, 74, 0.32)");
     bCtx.fillStyle = causticGrad;
-    bCtx.fillRect(0, 0, w, h);
+    bCtx.fillRect(0, 0, w, horizonMaskY);
     bCtx.restore();
 
     // Composite Layer 0 onto main stage with subtle executive depth weight
     ctx.save();
     ctx.globalCompositeOperation = "screen";
-    ctx.globalAlpha = 0.065 * (0.45 + 0.55 * wipeProgress);
+    ctx.globalAlpha = 0.068 * (0.28 + 0.72 * wipeProgress);
     ctx.drawImage(this.layerBuffer, 0, 0, w, h);
     ctx.restore();
   }
@@ -329,49 +349,49 @@ class HydroCanvasCompositor {
   renderLayer1GridAndHorizon(ctx, time, mx, my, slideIndex, offsetX) {
     const w = this.width;
     const h = this.height;
-    const gx = -mx * 18 + offsetX;
-    const gy = my * 10;
+    const gx = -mx * 16 + offsetX;
+    const gy = my * 8;
 
     ctx.save();
     ctx.globalCompositeOperation = "screen";
 
-    // Subtle 4-column executive architectural hairlines
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.028)";
+    // Ultra-clean architectural hairlines
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.024)";
     ctx.lineWidth = 1;
     const cols = w < 768 ? 2 : 4;
     const padX = w < 768 ? 24 : 64;
     const usableW = w - padX * 2;
 
     for (let i = 0; i <= cols; i++) {
-      const xPos = Math.round(padX + (usableW / cols) * i + gx * 0.35) + 0.5;
+      const xPos = Math.round(padX + (usableW / cols) * i + gx * 0.32) + 0.5;
       ctx.beginPath();
       ctx.moveTo(xPos, 64);
       ctx.lineTo(xPos, h - 72);
       ctx.stroke();
 
       // Intersection fiducial '+' ticks
-      const tickY = Math.round(h * 0.24 + gy * 0.3) + 0.5;
-      ctx.strokeStyle = "rgba(0, 194, 255, 0.14)";
+      const tickY = Math.round(h * 0.24 + gy * 0.28) + 0.5;
+      ctx.strokeStyle = "rgba(0, 194, 255, 0.12)";
       ctx.beginPath();
       ctx.moveTo(xPos - 4, tickY);
       ctx.lineTo(xPos + 4, tickY);
       ctx.moveTo(xPos, tickY - 4);
       ctx.lineTo(xPos, tickY + 4);
       ctx.stroke();
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.028)";
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.024)";
     }
 
     // Calm Laminar Fluid Horizon Line (Tracks presentation depth 0 -> 12)
     const progress = slideIndex / Math.max(1, this.totalSlides - 1);
-    const horizonBaseY = h * (0.82 - progress * 0.08) + gy * 0.4;
-    ctx.strokeStyle = "rgba(0, 194, 255, 0.16)";
-    ctx.lineWidth = 1.2;
+    const horizonBaseY = h * (0.82 - progress * 0.07) + gy * 0.35;
+    ctx.strokeStyle = "rgba(0, 194, 255, 0.14)";
+    ctx.lineWidth = 1.1;
     ctx.beginPath();
     for (let x = 0; x <= w; x += 28) {
       const normX = x / w;
       const waveY = horizonBaseY +
-        Math.sin(normX * 4.2 + time * 0.65) * 6.5 +
-        Math.cos(normX * 7.5 - time * 0.42) * 3.0;
+        Math.sin(normX * 4.2 + time * 0.6) * 5.5 +
+        Math.cos(normX * 7.5 - time * 0.38) * 2.5;
       if (x === 0) ctx.moveTo(x, waveY);
       else ctx.lineTo(x, waveY);
     }
@@ -421,39 +441,41 @@ class HydroCanvasCompositor {
     const w = this.width;
     const h = this.height;
     const fadeOut = 1 - wipeProgress;
+    const slant = Math.round(w * 0.14);
 
-    // 1. Directional outgoing watermark dissolve via destination-out mask
+    // 1. Editorial diagonal curtain wipe via 'destination-out' compositing
     ctx.save();
     ctx.globalCompositeOperation = "destination-out";
     const bandX = this.transitionDirection >= 0
-      ? w * (1 - wipeProgress * 1.15)
-      : w * (wipeProgress * 1.15 - 0.15);
-    const maskGrad = ctx.createLinearGradient(bandX - 180, 0, bandX + 180, 0);
+      ? w * (1 - wipeProgress * 1.18)
+      : w * (wipeProgress * 1.18 - 0.18);
+    const maskGrad = ctx.createLinearGradient(bandX - 220, 0, bandX + 220 + slant, h * 0.85);
     maskGrad.addColorStop(0, "rgba(0, 0, 0, 0)");
-    maskGrad.addColorStop(0.5, `rgba(0, 0, 0, ${(0.45 * fadeOut).toFixed(3)})`);
+    maskGrad.addColorStop(0.5, `rgba(0, 0, 0, ${(0.5 * fadeOut).toFixed(3)})`);
     maskGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
     ctx.fillStyle = maskGrad;
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
 
-    // 2. Crisp specular caustic curtain sweep via screen blend
+    // 2. Crisp specular optical curtain sweep via 'screen' blend
     ctx.save();
     ctx.globalCompositeOperation = "screen";
-    const curtainGrad = ctx.createLinearGradient(bandX - 140, 0, bandX + 140, 0);
+    const curtainGrad = ctx.createLinearGradient(bandX - 180, 0, bandX + 180 + slant, h);
     curtainGrad.addColorStop(0, "rgba(0, 194, 255, 0)");
-    curtainGrad.addColorStop(0.5, `rgba(0, 194, 255, ${(0.18 * fadeOut).toFixed(3)})`);
+    curtainGrad.addColorStop(0.5, `rgba(0, 194, 255, ${(0.2 * fadeOut).toFixed(3)})`);
     curtainGrad.addColorStop(1, "rgba(0, 194, 255, 0)");
     ctx.fillStyle = curtainGrad;
     ctx.fillRect(0, 0, w, h);
 
-    // Staggered outgoing ghost label trail
-    ctx.globalAlpha = 0.055 * fadeOut;
+    // Subtle rising outgoing monumental trail
+    ctx.globalAlpha = 0.05 * fadeOut;
     ctx.font = `700 ${Math.max(88, Math.min(260, w * 0.18))}px Inter, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#8fa3bd";
-    const ghostX = w * 0.5 - this.transitionDirection * wipeProgress * 160;
-    ctx.fillText(this.outgoingWord, ghostX, h * 0.5 + Math.sin(time * 2) * 4);
+    const ghostX = w * 0.5 - this.transitionDirection * wipeProgress * 140;
+    const ghostY = h * 0.51 - wipeProgress * 46 + Math.sin(time * 2) * 3;
+    ctx.fillText(this.outgoingWord, ghostX, ghostY);
     ctx.restore();
   }
 }
@@ -481,10 +503,7 @@ class HydroScene {
 
     this.init();
     this.initWaterShader();
-    this.initFloatingWaterSurface();
-    this.initBubbleParticles();
     this.initGlobalPresenceGlobe();
-    this.initModularReactor();
     this.setupEvents();
     this.animate();
   }
@@ -498,12 +517,13 @@ class HydroScene {
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setClearColor(0x000000, 0);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.08;
+    this.renderer.toneMappingExposure = 1.06;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x03070e);
-    this.scene.fog = new THREE.FogExp2(0x03070e, 0.045);
+    this.scene.background = null;
+    this.scene.fog = new THREE.FogExp2(0x03070e, 0.042);
 
     this.camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 100);
     this.camera.position.set(0, 0, 10);
@@ -634,7 +654,7 @@ class HydroScene {
         float dist = distance(vUv, vec2(0.5, 0.5));
         color *= smoothstep(0.95, 0.2, dist);
 
-        gl_FragColor = vec4(color, 0.38);
+        gl_FragColor = vec4(color, 0.22);
       }
     `;
 
@@ -657,101 +677,6 @@ class HydroScene {
     this.scene.add(this.waterMesh);
   }
 
-  initFloatingWaterSurface() {
-    // Subdued Horizon Water Plane
-    const meshGeo = new THREE.PlaneGeometry(36, 18, 64, 48);
-    meshGeo.rotateX(-Math.PI / 2.3);
-
-    const surfaceShader = {
-      vertexShader: `
-        uniform float u_time;
-        varying vec2 vUv;
-        varying float vElevation;
-
-        void main() {
-          vUv = uv;
-          vec3 pos = position;
-          float wave = sin(pos.x * 0.45 + u_time * 0.9) * cos(pos.y * 0.35 + u_time * 0.7) * 0.18;
-          wave += sin(pos.x * 1.1 - u_time * 1.3) * 0.06;
-          pos.z += wave;
-          vElevation = wave;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-        }
-      `,
-      fragmentShader: `
-        uniform float u_time;
-        varying vec2 vUv;
-        varying float vElevation;
-
-        void main() {
-          vec3 shallow = vec3(0.0, 0.55, 0.85);
-          vec3 deep = vec3(0.012, 0.04, 0.12);
-          vec3 crest = vec3(0.6, 0.88, 0.98);
-
-          float mixFactor = smoothstep(-0.2, 0.22, vElevation);
-          vec3 col = mix(deep, shallow, mixFactor);
-          if (vElevation > 0.14) {
-            col = mix(col, crest, (vElevation - 0.14) * 3.0);
-          }
-
-          float alpha = smoothstep(0.0, 0.18, vUv.x) * smoothstep(1.0, 0.82, vUv.x) *
-                        smoothstep(0.0, 0.18, vUv.y) * smoothstep(1.0, 0.82, vUv.y);
-
-          gl_FragColor = vec4(col, alpha * 0.18);
-        }
-      `
-    };
-
-    this.surfaceUniforms = { u_time: { value: 0 } };
-    const surfaceMat = new THREE.ShaderMaterial({
-      vertexShader: surfaceShader.vertexShader,
-      fragmentShader: surfaceShader.fragmentShader,
-      uniforms: this.surfaceUniforms,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    });
-
-    this.surfaceMesh = new THREE.Mesh(meshGeo, surfaceMat);
-    this.surfaceMesh.position.set(0, -2.6, 0);
-    this.scene.add(this.surfaceMesh);
-  }
-
-  initBubbleParticles() {
-    // Restrained Ambient Depth Dust (95 fine particles, zero clutter)
-    const count = 95;
-    const geometry = new THREE.BufferGeometry();
-    const positions = new Float32Array(count * 3);
-    const speeds = new Float32Array(count);
-
-    for (let i = 0; i < count; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 30;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * 20;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 12 + 1.0;
-      speeds[i] = Math.random() * 0.008 + 0.003;
-    }
-
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
-
-    const loader = new THREE.TextureLoader();
-    const dropletTexture = loader.load('assets/images/water_droplet.png');
-
-    const pMaterial = new THREE.PointsMaterial({
-      color: 0xb0bfd4,
-      size: 0.12,
-      map: dropletTexture,
-      transparent: true,
-      opacity: 0.26,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    });
-
-    this.particles = new THREE.Points(geometry, pMaterial);
-    this.scene.add(this.particles);
-    this.particleSpeeds = speeds;
-  }
-
   initGlobalPresenceGlobe() {
     // 3D Photorealistic Interactive Earth Globe for Slide 10 (Group Structure)
     this.globeGroup = new THREE.Group();
@@ -760,33 +685,41 @@ class HydroScene {
     this.globeGroup.scale.set(0, 0, 0);
 
     const radius = 2.25;
+    const maxAniso = this.renderer && this.renderer.capabilities
+      ? Math.min(this.renderer.capabilities.getMaxAnisotropy(), 16)
+      : 8;
 
     // 1. NASA Blue Marble Photorealistic Earth Surface
     const textureLoader = new THREE.TextureLoader();
     const earthTexture = textureLoader.load('assets/images/earth_surface_realistic.jpg');
     earthTexture.colorSpace = THREE.SRGBColorSpace;
+    earthTexture.anisotropy = maxAniso;
     earthTexture.wrapS = THREE.RepeatWrapping;
     earthTexture.wrapT = THREE.ClampToEdgeWrapping;
 
     const specularTexture = textureLoader.load('assets/images/earth_specular.jpg');
+    specularTexture.anisotropy = maxAniso;
 
     const earthGeo = new THREE.SphereGeometry(radius, 64, 64);
     const earthMat = new THREE.MeshPhongMaterial({
       map: earthTexture,
+      bumpMap: specularTexture,
+      bumpScale: 0.03,
       specularMap: specularTexture,
-      specular: new THREE.Color(0x1f5578),
-      shininess: 22
+      specular: new THREE.Color(0x1b4d6e),
+      shininess: 26
     });
     this.earthMesh = new THREE.Mesh(earthGeo, earthMat);
     this.globeGroup.add(this.earthMesh);
 
     // 2. Sheer Translucent Cloud Whisps
     const cloudsTexture = textureLoader.load('assets/images/earth_clouds.jpg');
+    cloudsTexture.anisotropy = maxAniso;
     const cloudsGeo = new THREE.SphereGeometry(radius * 1.01, 48, 48);
     const cloudsMat = new THREE.MeshStandardMaterial({
       alphaMap: cloudsTexture,
       transparent: true,
-      opacity: 0.14,
+      opacity: 0.12,
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
@@ -1083,84 +1016,6 @@ class HydroScene {
     this.focusedHubIndex = hubIndex;
   }
 
-  initModularReactor() {
-    // 3D Modular Electro-Coagulation Treatment Reactor (Slide 03 & Slide 12)
-    this.reactorGroup = new THREE.Group();
-    this.reactorGroup.position.set(3.8, -0.1, 2.2);
-    this.reactorGroup.scale.set(0, 0, 0);
-
-    const cylinderGeo = new THREE.CylinderGeometry(1.25, 1.25, 3.8, 36, 1, true);
-    const cylinderMat = new THREE.MeshPhysicalMaterial({
-      color: 0x00c2ff,
-      transparent: true,
-      opacity: 0.24,
-      roughness: 0.12,
-      metalness: 0.18,
-      transmission: 0.6,
-      ior: 1.333,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-    this.reactorGroup.add(new THREE.Mesh(cylinderGeo, cylinderMat));
-
-    const capGeo = new THREE.CylinderGeometry(1.35, 1.35, 0.18, 36);
-    const capMat = new THREE.MeshStandardMaterial({
-      color: 0x24334a,
-      metalness: 0.9,
-      roughness: 0.22
-    });
-    const topCap = new THREE.Mesh(capGeo, capMat);
-    topCap.position.y = 1.95;
-    this.reactorGroup.add(topCap);
-
-    const bottomCap = new THREE.Mesh(capGeo, capMat);
-    bottomCap.position.y = -1.95;
-    this.reactorGroup.add(bottomCap);
-
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2;
-      const isAnode = (i % 2 === 0);
-      const rodGeo = new THREE.CylinderGeometry(0.065, 0.065, 3.4, 16);
-      const rodMat = new THREE.MeshStandardMaterial({
-        color: isAnode ? 0x00c2ff : 0xd1d5db,
-        metalness: 0.85,
-        roughness: 0.25,
-        emissive: isAnode ? 0x0077b6 : 0x000000,
-        emissiveIntensity: 0.4
-      });
-      const rod = new THREE.Mesh(rodGeo, rodMat);
-      rod.position.set(Math.cos(angle) * 0.72, 0, Math.sin(angle) * 0.72);
-      this.reactorGroup.add(rod);
-    }
-
-    const coreGeo = new THREE.CylinderGeometry(0.16, 0.16, 3.3, 16);
-    const coreMat = new THREE.MeshBasicMaterial({
-      color: 0x00c2ff,
-      transparent: true,
-      opacity: 0.6,
-      blending: THREE.AdditiveBlending
-    });
-    this.reactorGroup.add(new THREE.Mesh(coreGeo, coreMat));
-
-    this.reactorRings = [];
-    for (let j = -2; j <= 2; j++) {
-      const ringGeo = new THREE.TorusGeometry(1.32, 0.03, 12, 36);
-      const ringMat = new THREE.MeshBasicMaterial({
-        color: 0x00c2ff,
-        transparent: true,
-        opacity: 0.45,
-        blending: THREE.AdditiveBlending
-      });
-      const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.rotation.x = Math.PI / 2;
-      ring.position.y = j * 0.7;
-      this.reactorGroup.add(ring);
-      this.reactorRings.push(ring);
-    }
-
-    this.scene.add(this.reactorGroup);
-  }
-
   setupEvents() {
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
@@ -1287,19 +1142,11 @@ class HydroScene {
     const angle = (this.slideIndex / 13) * Math.PI * 0.85;
     const radius = 9.8;
 
-    let targetX = Math.sin(angle) * 2.4;
-    let targetY = Math.cos(angle * 1.4) * 1.1;
-    let targetZ = radius;
+    const targetX = Math.sin(angle) * 2.2;
+    const targetY = Math.cos(angle * 1.4) * 1.0;
+    const targetZ = radius;
 
-    if (this.isDetailOpen) {
-      targetX = -3.4;
-      targetY = 0.6;
-      targetZ = 7.6;
-      this.targetCameraLookAt.set(-1.1, 0, 0);
-    } else {
-      this.targetCameraLookAt.set(0, 0, 0);
-    }
-
+    this.targetCameraLookAt.set(0, 0, 0);
     this.targetCameraPos.set(targetX, targetY, targetZ);
   }
 
@@ -1308,18 +1155,20 @@ class HydroScene {
 
     this.time += 0.016;
     this.waterUniforms.u_time.value = this.time;
-    if (this.surfaceUniforms) {
-      this.surfaceUniforms.u_time.value = this.time;
-    }
 
     // Smooth mouse lerp
     this.mouse.x += (this.mouse.targetX - this.mouse.x) * 0.05;
     this.mouse.y += (this.mouse.targetY - this.mouse.y) * 0.05;
     this.waterUniforms.u_mouse.value.set(this.mouse.x, this.mouse.y);
 
+    // Subtle caustic water plane visibility (stronger on analytical slides, subtle over PDF photography)
+    if (this.waterMesh) {
+      this.waterMesh.visible = (this.slideIndex !== 9);
+    }
+
     // Dynamic Camera Parallax & Depth Transitions
-    const camParallaxX = this.targetCameraPos.x + this.mouse.x * 0.6;
-    const camParallaxY = this.targetCameraPos.y + this.mouse.y * 0.4;
+    const camParallaxX = this.targetCameraPos.x + this.mouse.x * 0.55;
+    const camParallaxY = this.targetCameraPos.y + this.mouse.y * 0.35;
 
     this.camera.position.x += (camParallaxX - this.camera.position.x) * 0.045;
     this.camera.position.y += (camParallaxY - this.camera.position.y) * 0.045;
@@ -1328,27 +1177,7 @@ class HydroScene {
     this.currentLookAt.lerp(this.targetCameraLookAt, 0.045);
     this.camera.lookAt(this.currentLookAt);
 
-    // Restrained floating dust simulation
-    if (this.particles) {
-      const posAttr = this.particles.geometry.attributes.position;
-      const count = posAttr.count;
-      for (let i = 0; i < count; i++) {
-        let y = posAttr.getY(i);
-        y += this.particleSpeeds[i];
-        if (y > 10) y = -10;
-        posAttr.setY(i, y);
-
-        const x = posAttr.getX(i);
-        posAttr.setX(i, x + Math.sin(this.time * 1.4 + i) * 0.0018);
-      }
-      posAttr.needsUpdate = true;
-    }
-
-    if (this.surfaceMesh) {
-      this.surfaceMesh.rotation.z = Math.sin(this.time * 0.35) * 0.02 + this.mouse.x * 0.03;
-    }
-
-    // Globe Animation & Target Focusing
+    // Photorealistic Interactive Globe Animation & Target Focusing (Slide 10)
     if (this.globeGroup) {
       const isSlide10 = (this.slideIndex === 9);
       const targetScale = isSlide10 ? 1 : 0;
@@ -1414,21 +1243,6 @@ class HydroScene {
           if (arc.progress > 1.0) arc.progress = 0.0;
           const pt = arc.curve.getPointAt(arc.progress);
           arc.pulse.position.copy(pt);
-        });
-      }
-    }
-
-    // Modular Reactor Animation
-    if (this.reactorGroup) {
-      const isReactorSlide = (this.slideIndex === 2 || this.slideIndex === 11);
-      const targetScale = isReactorSlide ? 1 : 0;
-      this.reactorGroup.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.08);
-      this.reactorGroup.rotation.y += 0.01;
-      this.reactorGroup.rotation.x = 0.15 + this.mouse.y * 0.06;
-      if (this.reactorRings) {
-        this.reactorRings.forEach((ring, idx) => {
-          const pulse = 1 + Math.sin(this.time * 3.2 + idx * 0.8) * 0.04;
-          ring.scale.set(pulse, pulse, pulse);
         });
       }
     }
